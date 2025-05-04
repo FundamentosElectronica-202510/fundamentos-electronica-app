@@ -1,0 +1,28 @@
+# Visual Studio Code
+.vscode/
+
+# JetBrains IDEs (PyCharm, CLion, IntelliJ, etc.)
+.idea/
+.out/
+*.iml
+
+# Python
+.env/
+.venv/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+
+# PlatformIO
+.pio/
+
+# MacOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~

@@ -18,7 +18,7 @@ void loop()
         + String(flexdata) );
     if( flexdata < 220) {
         analogWrite(buzzer, 150); // remove if the buzzer is not used
-        Serial.println( "[WARNING] Postura incorrecta: "
+        Serial.println( "[WARNING] -Postura incorrecta: "
             + String(flexdata) );
     }
     if( flexdata > 220) {

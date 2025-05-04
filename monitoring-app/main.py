@@ -1,3 +1,5 @@
+import platform
+import subprocess
 import serial
 import threading
 import tkinter as tk
@@ -6,13 +8,34 @@ import tkinter as tk
 PORT = '/dev/tty.usbmodem1101'  # <- update if needed
 BAUD = 9600
 
+
+def is_macos_dark_mode():
+    """Check if macOS is in dark mode."""
+    if platform.system() != "Darwin":
+        return False
+    try:
+        cmd = 'defaults read -g AppleInterfaceStyle'
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, shell=True)
+        stdout, _ = p.communicate()
+        return stdout.decode().strip() == 'Dark'
+    except Exception:
+        return False
+
+
 class FlexMonitor:
     def __init__(self, root):
         self.serial_thread = None
         self.error_frame = None
         self.root = root
         self.root.title("Monitor de sensores - Fundamentos de Electrónica")
-        self.root.attributes('-topmost', True) # Make window stay on top
+        self.root.attributes('-topmost', True)  # Make window stay on top
+
+        # Determine text color based on mode
+        self.text_color = "white" if is_macos_dark_mode() else "black"
+        # Set background for visibility in dark mode if needed (optional)
+        # if is_macos_dark_mode():
+        #     self.root.config(bg='black') # Or a dark gray
 
         # Define window size
         window_width = 500
@@ -27,8 +50,8 @@ class FlexMonitor:
         screen_height = self.root.winfo_screenheight()
 
         # Calculate position x, y
-        center_x = int(screen_width/2 - window_width / 2)
-        center_y = int(screen_height/2 - window_height / 2)
+        center_x = int(screen_width / 2 - window_width / 2)
+        center_y = int(screen_height / 2 - window_height / 2)
 
         # Set geometry with position
         self.root.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
@@ -36,10 +59,11 @@ class FlexMonitor:
         # Prevent the window from being resized below its initial dimensions
         self.root.minsize(self.window_width, self.window_height)
 
-        self.label = tk.Label(root, text="Esperando información del dispositivo...", font=("Helvetica", 16))
+        self.label = tk.Label(root, text="Esperando información del dispositivo...", font=("Helvetica", 16),
+                              fg=self.text_color)
         self.label.pack(pady=30)
 
-        self.status = tk.Label(root, text="", font=("Helvetica", 14), fg="black")
+        self.status = tk.Label(root, text="", font=("Helvetica", 14), fg=self.text_color)
         self.status.pack()
 
         # Start the serial-reading thread
@@ -50,15 +74,15 @@ class FlexMonitor:
             with serial.Serial(PORT, BAUD, timeout=1) as ser:
                 while True:
                     line = ser.readline().decode('utf-8').strip()
-                    if line.startswith("[WARNING]"):
-                        value = int(line.split("-")[1])
+                    if line.startswith("flex value"):
+                        value = int(line.split(";")[1])
                         # Use after to schedule GUI updates on the main thread
                         self.root.after(0, self.update_gui, value)
         except serial.SerialException as e:
             # Use after to schedule GUI updates on the main thread
             self.root.after(0, self.show_error, e)
-        except Exception as e: # Catch potential decoding or int conversion errors
-             self.root.after(0, self.show_error, e)
+        except Exception as e:  # Catch potential decoding or int conversion errors
+            self.root.after(0, self.show_error, e)
 
     def start_serial(self):
         """Launch or relaunch the serial-reading thread."""
@@ -73,12 +97,14 @@ class FlexMonitor:
             widget.destroy()
         # Create error frame
         self.error_frame = tk.Frame(self.root)
+        # if is_macos_dark_mode(): # Optional: Set frame background
+        #     self.error_frame.config(bg='black')
         self.error_frame.pack(expand=True, fill="both")
         # Error message
         error_label = tk.Label(
             self.error_frame,
             text="No se detectó el dispositivo. Verifica la conexión.",
-            fg="black",
+            fg=self.text_color,  # Use determined text color
             font=("Helvetica", 16),
             wraplength=self.window_width - 20,
             justify="center"
@@ -93,21 +119,22 @@ class FlexMonitor:
         """Handle retry: destroy error panel and restart serial logic."""
         if hasattr(self, 'error_frame'):
             self.error_frame.destroy()
-        # Recreate original labels
+        # Recreate original labels with correct color
         self.label = tk.Label(self.root, text="Esperando información del dispositivo...",
-                               font=("Helvetica", 16))
+                              font=("Helvetica", 16), fg=self.text_color)
         self.label.pack(pady=30)
-        self.status = tk.Label(self.root, text="", font=("Helvetica", 14), fg="black")
+        self.status = tk.Label(self.root, text="", font=("Helvetica", 14), fg=self.text_color)
         self.status.pack()
         # Restart serial thread
         self.start_serial()
 
     def update_gui(self, value):
-        self.label.config(text=f"Flex value: {value}")
+        self.label.config(text=f"Flex value: {value}", fg=self.text_color)  # Ensure label color is correct
         if value < 220:
-            self.status.config(text="WARNING: Sensor activado!", fg="red")
+            self.status.config(text="WARNING: Sensor activado!", fg="red")  # Warning is always red
         else:
-            self.status.config(text="Sensor OK", fg="green")
+            self.status.config(text="Sensor OK", fg="green")  # OK status is green
+
 
 # Run the GUI
 if __name__ == "__main__":

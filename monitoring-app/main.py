@@ -5,7 +5,7 @@ import threading
 import tkinter as tk
 
 # Set your Arduino's port — find it via: `ls /dev/tty.usb*`
-PORT = '/dev/tty.usbmodem1101'  # <- TODO update port if needed
+PORT = '/dev/tty.usbmodem1101'  # TODO update serial port if needed
 BAUD = 9600
 
 

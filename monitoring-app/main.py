@@ -5,12 +5,12 @@ import threading
 import tkinter as tk
 
 # Set your Arduino's port — find it via: `ls /dev/tty.usb*`
-PORT = '/dev/tty.usbmodem1101'  # <- update if needed
+PORT = '/dev/tty.usbmodem1101'  # <- TODO update port if needed
 BAUD = 9600
 
 
 def is_macos_dark_mode():
-    """Check if macOS is in dark mode."""
+    """ AUX FUN. Check if macOS is in dark mode."""
     if platform.system() != "Darwin":
         return False
     try:
@@ -24,6 +24,7 @@ def is_macos_dark_mode():
 
 
 class FlexMonitor:
+    
     def __init__(self, root):
         self.serial_thread = None
         self.error_frame = None
@@ -70,6 +71,8 @@ class FlexMonitor:
         self.start_serial()
 
     def read_serial(self):
+        """Read data from the serial port and update the GUI."""
+        # TODO modificar función: debería haber una función para cada sensor, y no una función que lea todos los sensores. Utilizar Threads
         try:
             with serial.Serial(PORT, BAUD, timeout=1) as ser:
                 while True:
@@ -86,6 +89,7 @@ class FlexMonitor:
 
     def start_serial(self):
         """Launch or relaunch the serial-reading thread."""
+        # TODO garantizar la existencia de 1 thread para cada sensor
         self.serial_thread = threading.Thread(target=self.read_serial)
         self.serial_thread.daemon = True
         self.serial_thread.start()

@@ -6,6 +6,14 @@ int tempS = A2; // temperature sensor is connected with pin A2 of the arduino
 int sweatS = A3; // sweat sensor is connected with pin A3 of the arduino
 
 int flexdata = 0;
+int pulsedata = 0;
+int tempdata = 0;
+int sweatdata = 0;
+
+int flexThreshold = 220; // threshold for flex sensor
+int pulseThreshold = 220; // threshold for pulse sensor
+int tempThreshold = 220; // threshold for temperature sensor
+int sweatThreshold = 220; // threshold for sweat sensor
 
 void setup()
 {
@@ -22,8 +30,9 @@ void loop()
     flexdata = analogRead(flexS);
     Serial.println("flex value;"
         + String(flexdata) );
-    if( flexdata < 220) {
-        Serial.println( "[WARNING];" // TODO editar mensaje de advertencia para que sea específico al test de postura
+
+    if( flexdata < flexThreshold ) {
+        Serial.println( "[FLEX WARNING];"
             + String(flexdata) );
     }
 
@@ -31,19 +40,43 @@ void loop()
     // Sensor de pulso
     // =======================================================
 
-    // TODO configurar sensor de pulso para enviar advertencias a la app de python
+    pulsedata = analogRead(pulseS);
+    Serial.println("pulse value;"
+        + String(pulsedata) );
+
+    if ( pulsedata < pulseThreshold ) {
+        Serial.println( "[PULSE WARNING];"
+            + String(pulsedata) );
+    }
 
     // =======================================================
     // Sensor de temperatura corporal
     // =======================================================
 
-    // TODO configurar sensor de temperatura corporal para enviar advertencias a la app de python
+    tempdata = analogRead(tempS);
+    Serial.println("temp value;"
+        + String(tempdata) );
+
+    if ( tempdata < tempThreshold ) {
+        Serial.println( "[TEMP WARNING];"
+            + String(tempdata) );
+    }
 
     // =======================================================
     // Sensor de sudor
     // =======================================================
 
-    // TODO configurar sensor de sudor para enviar a la app de python
+    sweatdata = analogRead(sweatS);
+    Serial.println("sweat value;"
+        + String(sweatdata) );
 
+    if ( sweatdata < sweatThreshold ) {
+        Serial.println( "[SWEAT WARNING];"
+            + String(sweatdata) );
+    }
+
+    // DELAY BETWEEN LOOPS
     delay(1000);
+
+    // END SENSOR LOOP
 }

@@ -4,8 +4,8 @@
 
 | Nombre                    | Código    |
 |---------------------------|-----------|
-| Natalia Lopez             | 2022XXXXX |
-| Alejandra XXXXXXXXXXXXXXX | 2022XXXXX |
+| Natalia Lopez             | 202215351 |
+| Alejandra Cabezas         | 2022XXXXX |
 
 ## Descrpición
 

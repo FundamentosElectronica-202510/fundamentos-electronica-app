@@ -1,147 +1,304 @@
+import os
 import platform
 import subprocess
+import sys
+
 import serial
 import threading
 import tkinter as tk
+from tkinter import ttk, messagebox
 
-# Set your Arduino's port — find it via: `ls /dev/tty.usb*`
-PORT = '/dev/tty.usbmodem1101'  # TODO update serial port if needed
+# ----------------------------- Serial settings ----------------------------- #
+PORT = '/dev/tty.usbserial-2110'  # <- Update to match your Arduino port
 BAUD = 9600
 
+# ------------------------------ Thresholds --------------------------------- #
+POSTURE_THRESHOLD = 220  # flex sensor raw value – > choose empirically
+PULSE_MIN = 50  # bpm lower bound for a resting adult
+PULSE_MAX = 110  # bpm upper bound for a resting adult
+SWEAT_THRESHOLD = 600  # larger raw value ⇒ more sweat (set experimentally)
 
-def is_macos_dark_mode():
-    """ AUX FUN. Check if macOS is in dark mode."""
+# A simple mapping from “how many sensors are currently in warning” to a
+# Spanish‑language stress level. Adjust to your project needs.
+STRESS_LEVELS = {
+    0: "Bajo",
+    1: "Medio",
+    2: "Alto",
+    3: "Alto"
+}
+
+
+# --------------------------------------------------------------------------- #
+
+def is_macos_dark_mode() -> bool:
+    """Return True if macOS is in dark mode (used only for label colours)."""
     if platform.system() != "Darwin":
         return False
     try:
-        cmd = 'defaults read -g AppleInterfaceStyle'
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE, shell=True)
+        p = subprocess.Popen(
+            "defaults read -g AppleInterfaceStyle",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=True
+        )
         stdout, _ = p.communicate()
-        return stdout.decode().strip() == 'Dark'
+        return stdout.decode().strip() == "Dark"
     except Exception:
         return False
 
 
-class FlexMonitor:
-    
-    def __init__(self, root):
-        self.serial_thread = None
-        self.error_frame = None
+class FlexMonitorGUI:
+    """Tkinter GUI that shows live data coming from several Arduino sensors."""
+
+    # ──────────────────────────── Init / Layout ──────────────────────────── #
+
+    def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Monitor de sensores - Fundamentos de Electrónica")
-        self.root.attributes('-topmost', True)  # Make window stay on top
+        self.root.title("Monitor de sensores – Fundamentos de Electrónica")
+        self.root.attributes("-topmost", True)
 
-        # Determine text color based on mode
-        self.text_color = "white" if is_macos_dark_mode() else "black"
-        # Set background for visibility in dark mode if needed (optional)
-        # if is_macos_dark_mode():
-        #     self.root.config(bg='black') # Or a dark gray
+        self.text_colour = "white" if is_macos_dark_mode() else "black"
 
-        # Define window size
-        window_width = 500
-        window_height = 400
+        # Window dimensions and centering
+        w, h = 520, 480
+        self.root.minsize(w, h)
+        _sx, _sy = root.winfo_screenwidth(), root.winfo_screenheight()
+        root.geometry(f"{w}x{h}+{_sx // 2 - w // 2}+{_sy // 2 - h // 2}")
 
-        # Store dimensions for error layout
-        self.window_width = window_width
-        self.window_height = window_height
+        # ---------------------------------------------------- Notebook layout #
+        notebook = ttk.Notebook(root)
+        notebook.pack(expand=True, fill="both")
 
-        # Get screen dimensions
-        screen_width = self.root.winfo_screenwidth()
-        screen_height = self.root.winfo_screenheight()
+        self.frames = {}
+        for name in ("Postura", "Pulso", "Sudor", "BMI", "Nivel de estrés"):
+            f = ttk.Frame(notebook)
+            notebook.add(f, text=name)
+            self.frames[name] = f
 
-        # Calculate position x, y
-        center_x = int(screen_width / 2 - window_width / 2)
-        center_y = int(screen_height / 2 - window_height / 2)
+        # ------------- Widgets for each tab ------------- #
+        self._build_posture_tab()
+        self._build_pulse_tab()
+        self._build_sweat_tab()
+        self._build_bmi_tab()
+        self._build_stress_tab()
 
-        # Set geometry with position
-        self.root.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
-        self.root.resizable(True, True)
-        # Prevent the window from being resized below its initial dimensions
-        self.root.minsize(self.window_width, self.window_height)
+        # ------------------------------------------------- State variables #
+        self.height_cm: float | None = None  # captured once from HEIGHT sensor
+        self.weight_kg: float | None = None
 
-        self.label = tk.Label(root, text="Esperando información del dispositivo...", font=("Helvetica", 16),
-                              fg=self.text_color)
-        self.label.pack(pady=30)
+        self.warnings: dict[str, bool] = {
+            "POSTURE": False,
+            "PULSE": False,
+            "SWEAT": False
+        }
 
-        self.status = tk.Label(root, text="", font=("Helvetica", 14), fg=self.text_color)
-        self.status.pack()
+        # Thread management
+        self.serial_threads: list[threading.Thread] = []
+        self._start_serial_threads()
 
-        # Start the serial-reading thread
-        self.start_serial()
+    # ─────────────────────── Build individual tabs ──────────────────────── #
 
-    def read_serial(self):
-        """Read data from the serial port and update the GUI."""
-        # TODO modificar función: debería haber una función para cada sensor, y no una función que lea todos los sensores. Utilizar Threads
+    def _lbl(self, parent, text, **kwargs):
+        return tk.Label(parent, text=text, fg=self.text_colour, **kwargs)
+
+    def _build_posture_tab(self):
+        f = self.frames["Postura"]
+        self.posture_val_lbl = self._lbl(f, "Valor flex: --", font=("Helvetica", 18))
+        self.posture_val_lbl.pack(pady=10)
+        self.posture_status_lbl = self._lbl(f, "Estado: --", font=("Helvetica", 16))
+        self.posture_status_lbl.pack()
+
+    def _build_pulse_tab(self):
+        f = self.frames["Pulso"]
+        self.pulse_val_lbl = self._lbl(f, "Pulso: -- bpm", font=("Helvetica", 18))
+        self.pulse_status_lbl = self._lbl(f, "Estado: --", font=("Helvetica", 16))
+        self.pulse_val_lbl.pack(pady=10)
+        self.pulse_status_lbl.pack()
+
+    def _build_sweat_tab(self):
+        f = self.frames["Sudor"]
+        self.sweat_val_lbl = self._lbl(f, "Humedad: --", font=("Helvetica", 18))
+        self.sweat_status_lbl = self._lbl(f, "Estado: --", font=("Helvetica", 16))
+        self.sweat_val_lbl.pack(pady=10)
+        self.sweat_status_lbl.pack()
+
+    def _build_bmi_tab(self):
+        f = self.frames["BMI"]
+
+        self.bmi_height_lbl = self._lbl(f, "Altura: -- cm (sensor)", font=("Helvetica", 14))
+        self.bmi_height_lbl.pack(pady=(15, 5))
+
+        weight_frame = ttk.Frame(f)
+        weight_frame.pack(pady=5)
+        ttk.Label(weight_frame, text="Peso (kg):").pack(side="left", padx=(0, 6))
+        self.weight_entry = ttk.Entry(weight_frame, width=8)
+        self.weight_entry.pack(side="left")
+        ttk.Button(weight_frame, text="Calcular BMI", command=self._calculate_bmi).pack(side="left", padx=6)
+
+        self.bmi_result_lbl = self._lbl(f, "BMI: --", font=("Helvetica", 16))
+        self.bmi_result_lbl.pack(pady=10)
+
+    def _build_stress_tab(self):
+        f = self.frames["Nivel de estrés"]
+        self.stress_lbl = self._lbl(f, "Nivel de estrés: --", font=("Helvetica", 20))
+        self.stress_lbl.pack(expand=True)
+
+    # ─────────────────────────── Serial threads ─────────────────────────── #
+
+    def _start_serial_threads(self):
+        for target in (self._read_posture, self._read_pulse, self._read_height,
+                       self._read_sweat):
+            t = threading.Thread(target=target, daemon=True)
+            t.start()
+            self.serial_threads.append(t)
+
+    # Individual reader loops ------------------------------------------------ #
+
+    def _read_posture(self):
         try:
             with serial.Serial(PORT, BAUD, timeout=1) as ser:
                 while True:
-                    line = ser.readline().decode('utf-8').strip()
+                    line = ser.readline().decode(errors="ignore").strip()
                     if line.startswith("flex value"):
-                        value = int(line.split(";")[1])
-                        # Use after to schedule GUI updates on the main thread
-                        self.root.after(0, self.update_gui, value)
+                        try:
+                            value = int(line.split(";")[1])
+                            self.root.after(0, self._update_posture, value)
+                        except (IndexError, ValueError):
+                            continue
         except serial.SerialException as e:
-            # Use after to schedule GUI updates on the main thread
-            self.root.after(0, self.show_error, e)
-        except Exception as e:  # Catch potential decoding or int conversion errors
-            self.root.after(0, self.show_error, e)
+            self._show_error(e)
 
-    def start_serial(self):
-        """Launch or relaunch the serial-reading thread."""
-        # TODO garantizar la existencia de 1 thread para cada sensor
-        self.serial_thread = threading.Thread(target=self.read_serial)
-        self.serial_thread.daemon = True
-        self.serial_thread.start()
+    def _read_pulse(self):
+        try:
+            with serial.Serial(PORT, BAUD, timeout=1) as ser:
+                while True:
+                    line = ser.readline().decode(errors="ignore").strip()
+                    if line.startswith("pulse value"):
+                        try:
+                            value = int(line.split(";")[1])
+                            self.root.after(0, self._update_pulse, value)
+                        except (IndexError, ValueError):
+                            continue
+        except serial.SerialException as e:
+            self._show_error(e)
 
-    def show_error(self, error):
-        """Display an error panel when no device is connected."""
-        # Clear existing widgets
-        for widget in self.root.winfo_children():
-            widget.destroy()
-        # Create error frame
-        self.error_frame = tk.Frame(self.root)
-        # if is_macos_dark_mode(): # Optional: Set frame background
-        #     self.error_frame.config(bg='black')
-        self.error_frame.pack(expand=True, fill="both")
-        # Error message
-        error_label = tk.Label(
-            self.error_frame,
-            text="No se detectó el dispositivo. Verifica la conexión.",
-            fg=self.text_color,  # Use determined text color
-            font=("Helvetica", 16),
-            wraplength=self.window_width - 20,
-            justify="center"
+    def _read_height(self):
+        """Height is captured *once* – ignore further messages afterward."""
+        try:
+            with serial.Serial(PORT, BAUD, timeout=1) as ser:
+                while self.height_cm is None:
+                    line = ser.readline().decode(errors="ignore").strip()
+                    if line.startswith("height value"):
+                        try:
+                            value = int(line.split(";")[1])
+                            self.root.after(0, self._update_height_once, value)
+                        except (IndexError, ValueError):
+                            continue
+        except serial.SerialException as e:
+            self._show_error(e)
+
+    def _read_sweat(self):
+        try:
+            with serial.Serial(PORT, BAUD, timeout=1) as ser:
+                while True:
+                    line = ser.readline().decode(errors="ignore").strip()
+                    if line.startswith("sweat value"):
+                        try:
+                            value = int(line.split(";")[1])
+                            self.root.after(0, self._update_sweat, value)
+                        except (IndexError, ValueError):
+                            continue
+        except serial.SerialException as e:
+            self._show_error(e)
+
+    # ───────────────────────────── GUI updates ───────────────────────────── #
+
+    def _update_posture(self, value: int):
+        self.posture_val_lbl.config(text=f"Valor flex: {value}")
+        correct = value >= POSTURE_THRESHOLD
+        self.posture_status_lbl.config(
+            text="Correcto" if correct else "Incorrecto",
+            fg="green" if correct else "red"
         )
-        error_label.pack(padx=10, pady=20, expand=True)
-        # Retry button
-        retry_button = tk.Button(self.error_frame, text="Volver a intentar",
-                                 command=self.retry)
-        retry_button.pack(side="bottom", pady=20)
+        self.warnings["POSTURE"] = not correct
+        self._update_stress_level()
 
-    def retry(self):
-        """Handle retry: destroy error panel and restart serial logic."""
-        if hasattr(self, 'error_frame'):
-            self.error_frame.destroy()
-        # Recreate original labels with correct color
-        self.label = tk.Label(self.root, text="Esperando información del dispositivo...",
-                              font=("Helvetica", 16), fg=self.text_color)
-        self.label.pack(pady=30)
-        self.status = tk.Label(self.root, text="", font=("Helvetica", 14), fg=self.text_color)
-        self.status.pack()
-        # Restart serial thread
-        self.start_serial()
+    def _update_pulse(self, bpm: int):
+        self.pulse_val_lbl.config(text=f"Pulso: {bpm} bpm")
+        correct = PULSE_MIN <= bpm <= PULSE_MAX
+        self.pulse_status_lbl.config(
+            text="Normal" if correct else "Fuera de rango",
+            fg="green" if correct else "red"
+        )
+        self.warnings["PULSE"] = not correct
+        self._update_stress_level()
 
-    def update_gui(self, value):
-        self.label.config(text=f"Flex value: {value}", fg=self.text_color)  # Ensure label color is correct
-        if value < 220:
-            self.status.config(text="WARNING: Sensor activado!", fg="red")  # Warning is always red
-        else:
-            self.status.config(text="Sensor OK", fg="green")  # OK status is green
+    def _update_height_once(self, value: int):
+        # value expected in centimetres from ultrasonic sensor
+        self.height_cm = value
+        self.bmi_height_lbl.config(text=f"Altura: {value} cm (sensor)")
+        # Trigger a BMI recalculation if weight already entered
+        self._calculate_bmi()
+
+    def _update_sweat(self, value: int):
+        self.sweat_val_lbl.config(text=f"Humedad: {value}")
+        correct = value < SWEAT_THRESHOLD
+        self.sweat_status_lbl.config(
+            text="Normal" if correct else "Alta",
+            fg="green" if correct else "red"
+        )
+        self.warnings["SWEAT"] = not correct
+        self._update_stress_level()
+
+    # BMI – invoked by button or when height arrives ------------------------ #
+
+    def _calculate_bmi(self):
+        if self.height_cm is None:
+            return  # Wait until height sensor delivers a value
+        try:
+            weight_txt = self.weight_entry.get().strip()
+            self.weight_kg = float(weight_txt) if weight_txt else None
+        except ValueError:
+            messagebox.showerror("Entrada incorrecta", "Ingrese un valor válido para el peso.")
+            return
+
+        if self.weight_kg is None:
+            return
+
+        h_m = self.height_cm / 100.0
+        bmi = self.weight_kg / (h_m ** 2)
+        self.bmi_result_lbl.config(text=f"BMI: {bmi:.1f}")
+
+    # Stress level ---------------------------------------------------------- #
+
+    def _update_stress_level(self):
+        n_warn = sum(self.warnings.values())
+        level = STRESS_LEVELS.get(n_warn, "Alto")
+        colour = "green" if level == "Bajo" else ("orange" if level == "Medio" else "red")
+        self.stress_lbl.config(text=f"Nivel de estrés: {level}", fg=colour)
+
+    # ───────────────────────────── Error view ────────────────────────────── #
+
+    def _show_error(self, exc: Exception):
+        # Called from a thread; use after() to show in main loop
+        self.root.after(0, self._render_error, str(exc))
+
+    def _render_error(self, msg: str):
+        for w in self.root.winfo_children():
+            w.destroy()
+        self._lbl(self.root, "No se detectó el dispositivo.\nVerifica la conexión.",
+                  font=("Helvetica", 16)).pack(expand=True)
+        ttk.Button(self.root, text="Reintentar", command=self._restart).pack(pady=12)
+
+    def _restart(self):
+        # Completely restart the program (quick and dirty)
+        python = sys.executable
+        os.execl(python, python, *sys.argv)
 
 
-# Run the GUI
+# ──────────────────────────────── Main ───────────────────────────────────── #
+
 if __name__ == "__main__":
     root = tk.Tk()
-    app = FlexMonitor(root)
+    FlexMonitorGUI(root)
     root.mainloop()

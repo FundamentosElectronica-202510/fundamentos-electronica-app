@@ -1,302 +1,252 @@
+import glob
 import os
 import platform
 import subprocess
 import sys
-
 import serial
 import threading
+import time
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-# ----------------------------- Serial settings ----------------------------- #
-PORT = '/dev/tty.usbserial-2110'  # <- Update to match your Arduino port
+
+# ────────────────────────────── Config ──────────────────────────────── #
+
+def _find_arduino_port() -> str | None:
+    """Return the first /dev/tty.usbmodem* device found (macOS)."""
+    devices = glob.glob("/dev/tty.usbmodem*")
+    return devices[0] if devices else None
+
+
+PORT = _find_arduino_port() or "/dev/tty.usbserial-2110"  # fallback
 BAUD = 9600
 
-# ------------------------------ Thresholds --------------------------------- #
-POSTURE_THRESHOLD = 220  # flex sensor raw value – > choose empirically
-PULSE_MIN = 50  # bpm lower bound for a resting adult
-PULSE_MAX = 110  # bpm upper bound for a resting adult
-SWEAT_THRESHOLD = 600  # larger raw value ⇒ more sweat (set experimentally)
-
-# A simple mapping from “how many sensors are currently in warning” to a
-# Spanish‑language stress level. Adjust to your project needs.
-STRESS_LEVELS = {
-    0: "Bajo",
-    1: "Medio",
-    2: "Alto",
-    3: "Alto"
-}
+POSTURE_THRESHOLD = 220
+PULSE_MIN, PULSE_MAX = 50, 110
+SWEAT_THRESHOLD = 600
+STRESS_LEVELS = {0: "Bajo", 1: "Medio", 2: "Alto", 3: "Alto"}
 
 
-# --------------------------------------------------------------------------- #
+# ────────────────────────── Helpers / Themes ────────────────────────── #
 
-def is_macos_dark_mode() -> bool:
-    """Return True if macOS is in dark mode (used only for label colours)."""
+def _is_macos_dark() -> bool:
     if platform.system() != "Darwin":
         return False
     try:
-        p = subprocess.Popen(
+        out, _ = subprocess.Popen(
             "defaults read -g AppleInterfaceStyle",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             shell=True
-        )
-        stdout, _ = p.communicate()
-        return stdout.decode().strip() == "Dark"
+        ).communicate()
+        return out.decode().strip() == "Dark"
     except Exception:
         return False
 
 
-class FlexMonitorGUI:
-    """Tkinter GUI that shows live data coming from several Arduino sensors."""
+# ────────────────────────────── GUI Class ───────────────────────────── #
 
-    # ──────────────────────────── Init / Layout ──────────────────────────── #
+class FlexMonitorGUI:
+    """Tk GUI that visualises Arduino sensor data in five tabs."""
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Monitor de sensores – Fundamentos de Electrónica")
-        self.root.attributes("-topmost", True)
+        self.root.title("Monitor de sensores – Fundamentos de Electrónica")
+        self.text_colour = "white" if _is_macos_dark() else "black"
 
-        self.text_colour = "white" if is_macos_dark_mode() else "black"
+        # window size / center
+        w, h = 540, 300
+        sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+        root.geometry(f"{w}x{h}+{sw // 2 - w // 2}+{sh // 2 - h // 2}")
+        root.minsize(w, h)
+        root.attributes("-topmost", True)
 
-        # Window dimensions and centering
-        w, h = 520, 480
-        self.root.minsize(w, h)
-        _sx, _sy = root.winfo_screenwidth(), root.winfo_screenheight()
-        root.geometry(f"{w}x{h}+{_sx // 2 - w // 2}+{_sy // 2 - h // 2}")
+        self._build_notebook()
 
-        # ---------------------------------------------------- Notebook layout #
-        notebook = ttk.Notebook(root)
-        notebook.pack(expand=True, fill="both")
+        # sensor‑state bookkeeping
+        self.height_cm: float | None = None
+        self.weight_kg: float | None = None
+        self.warnings = {"POSTURE": False, "PULSE": False, "SWEAT": False}
 
+        # serial thread control
+        self.running = True  # pauses callbacks when False
+        self.serial_thread: threading.Thread | None = None
+        self._start_serial_reader()
+
+    # ─────────────────────── Notebook / Tabs ──────────────────────── #
+
+    def _lbl(self, parent, text, **kw):
+        return tk.Label(parent, text=text, fg=self.text_colour, **kw)
+
+    def _build_notebook(self):
+        self.main_frame = tk.Frame(self.root)
+        self.error_frame = tk.Frame(self.root)
+        self.main_frame.pack(expand=True, fill="both")
+
+        nb = ttk.Notebook(self.main_frame)
+        nb.pack(expand=True, fill="both")
+
+        # create tabs
         self.frames = {}
         for name in ("Postura", "Pulso", "Sudor", "BMI", "Nivel de estrés"):
-            f = ttk.Frame(notebook)
-            notebook.add(f, text=name)
+            f = ttk.Frame(nb)
+            nb.add(f, text=name)
             self.frames[name] = f
 
-        # ------------- Widgets for each tab ------------- #
-        self._build_posture_tab()
-        self._build_pulse_tab()
-        self._build_sweat_tab()
-        self._build_bmi_tab()
-        self._build_stress_tab()
-
-        # ------------------------------------------------- State variables #
-        self.height_cm: float | None = None  # captured once from HEIGHT sensor
-        self.weight_kg: float | None = None
-
-        self.warnings: dict[str, bool] = {
-            "POSTURE": False,
-            "PULSE": False,
-            "SWEAT": False
-        }
-
-        # Thread management
-        self.serial_threads: list[threading.Thread] = []
-        self._start_serial_threads()
-
-    # ─────────────────────── Build individual tabs ──────────────────────── #
-
-    def _lbl(self, parent, text, **kwargs):
-        return tk.Label(parent, text=text, fg=self.text_colour, **kwargs)
-
-    def _build_posture_tab(self):
-        f = self.frames["Postura"]
-        self.posture_val_lbl = self._lbl(f, "Valor flex: --", font=("Helvetica", 18))
-        self.posture_val_lbl.pack(pady=10)
-        self.posture_status_lbl = self._lbl(f, "Estado: --", font=("Helvetica", 16))
+        # widgets per tab
+        self.posture_val_lbl = self._lbl(self.frames["Postura"], "Valor flex: --", font=("Helvetica", 18))
+        self.posture_status_lbl = self._lbl(self.frames["Postura"], "Estado: --", font=("Helvetica", 16))
+        self.posture_val_lbl.pack(pady=10);
         self.posture_status_lbl.pack()
 
-    def _build_pulse_tab(self):
-        f = self.frames["Pulso"]
-        self.pulse_val_lbl = self._lbl(f, "Pulso: -- bpm", font=("Helvetica", 18))
-        self.pulse_status_lbl = self._lbl(f, "Estado: --", font=("Helvetica", 16))
-        self.pulse_val_lbl.pack(pady=10)
+        self.pulse_val_lbl = self._lbl(self.frames["Pulso"], "Pulso: -- bpm", font=("Helvetica", 18))
+        self.pulse_status_lbl = self._lbl(self.frames["Pulso"], "Estado: --", font=("Helvetica", 16))
+        self.pulse_val_lbl.pack(pady=10);
         self.pulse_status_lbl.pack()
 
-    def _build_sweat_tab(self):
-        f = self.frames["Sudor"]
-        self.sweat_val_lbl = self._lbl(f, "Humedad: --", font=("Helvetica", 18))
-        self.sweat_status_lbl = self._lbl(f, "Estado: --", font=("Helvetica", 16))
-        self.sweat_val_lbl.pack(pady=10)
+        self.sweat_val_lbl = self._lbl(self.frames["Sudor"], "Humedad: --", font=("Helvetica", 18))
+        self.sweat_status_lbl = self._lbl(self.frames["Sudor"], "Estado: --", font=("Helvetica", 16))
+        self.sweat_val_lbl.pack(pady=10);
         self.sweat_status_lbl.pack()
 
-    def _build_bmi_tab(self):
-        f = self.frames["BMI"]
-
-        self.bmi_height_lbl = self._lbl(f, "Altura: -- cm (sensor)", font=("Helvetica", 14))
+        bmi_f = self.frames["BMI"]
+        self.bmi_height_lbl = self._lbl(bmi_f, "Altura: -- cm (sensor)", font=("Helvetica", 14))
         self.bmi_height_lbl.pack(pady=(15, 5))
-
-        weight_frame = ttk.Frame(f)
-        weight_frame.pack(pady=5)
-        ttk.Label(weight_frame, text="Peso (kg):").pack(side="left", padx=(0, 6))
-        self.weight_entry = ttk.Entry(weight_frame, width=8)
+        w_frame = ttk.Frame(bmi_f);
+        w_frame.pack()
+        ttk.Label(w_frame, text="Peso (kg):").pack(side="left", padx=(0, 5))
+        self.weight_entry = ttk.Entry(w_frame, width=8);
         self.weight_entry.pack(side="left")
-        ttk.Button(weight_frame, text="Calcular BMI", command=self._calculate_bmi).pack(side="left", padx=6)
-
-        self.bmi_result_lbl = self._lbl(f, "BMI: --", font=("Helvetica", 16))
+        ttk.Button(w_frame, text="Calcular BMI", command=self._calc_bmi).pack(side="left", padx=6)
+        self.bmi_result_lbl = self._lbl(bmi_f, "BMI: --", font=("Helvetica", 16))
         self.bmi_result_lbl.pack(pady=10)
 
-    def _build_stress_tab(self):
-        f = self.frames["Nivel de estrés"]
-        self.stress_lbl = self._lbl(f, "Nivel de estrés: --", font=("Helvetica", 20))
+        self.stress_lbl = self._lbl(self.frames["Nivel de estrés"], "Nivel de estrés: --", font=("Helvetica", 20))
         self.stress_lbl.pack(expand=True)
 
-    # ─────────────────────────── Serial threads ─────────────────────────── #
+    # ────────────────────── Serial Reader (single) ─────────────────────── #
 
-    def _start_serial_threads(self):
-        for target in (self._read_posture, self._read_pulse, self._read_height,
-                       self._read_sweat):
-            t = threading.Thread(target=target, daemon=True)
-            t.start()
-            self.serial_threads.append(t)
+    def _start_serial_reader(self):
+        self.serial_thread = threading.Thread(target=self._serial_loop, daemon=True)
+        self.serial_thread.start()
 
-    # Individual reader loops ------------------------------------------------ #
+    # Helper to extract int safely
+    @staticmethod
+    def _extract_int(line: str) -> int | None:
+        try:
+            val_part = line.split(";", 1)[1]
+            digits = ''.join(ch for ch in val_part if ch.isdigit())
+            return int(digits) if digits else None
+        except (IndexError, ValueError):
+            return None
 
-    def _read_posture(self):
+    def _serial_loop(self):
+        """Read the serial port once and dispatch complete lines.
+        Handles concatenated lines like '742\rflex value;...' by
+        keeping only the digits before non‑digit chars."""
         try:
             with serial.Serial(PORT, BAUD, timeout=1) as ser:
                 while True:
-                    line = ser.readline().decode(errors="ignore").strip()
-                    if line.startswith("flex value"):
-                        try:
-                            value = int(line.split(";")[1])
-                            self.root.after(0, self._update_posture, value)
-                        except (IndexError, ValueError):
+                    if not self.running:
+                        time.sleep(0.2);
+                        continue
+                    raw = ser.readline()
+                    if not raw:
+                        continue
+                    # We may receive several lines if CRLF boundaries are odd
+                    for line in raw.decode(errors="ignore").split("\n"):
+                        line = line.strip()
+                        if not line:
                             continue
-        except serial.SerialException as e:
-            self._show_error(e)
-
-    def _read_pulse(self):
-        try:
-            with serial.Serial(PORT, BAUD, timeout=1) as ser:
-                while True:
-                    line = ser.readline().decode(errors="ignore").strip()
-                    if line.startswith("pulse value"):
-                        try:
-                            value = int(line.split(";")[1])
-                            self.root.after(0, self._update_pulse, value)
-                        except (IndexError, ValueError):
+                        value = self._extract_int(line)
+                        if value is None:
                             continue
+                        if line.startswith("flex value;"):
+                            self._dispatch(self._update_posture, value)
+                        elif line.startswith("pulse value;"):
+                            self._dispatch(self._update_pulse, value)
+                        elif line.startswith("height value;") and self.height_cm is None:
+                            self._dispatch(self._update_height_once, value)
+                        elif line.startswith("sweat value;"):
+                            self._dispatch(self._update_sweat, value)
         except serial.SerialException as e:
-            self._show_error(e)
+            self._dispatch(self._show_error, str(e))
 
-    def _read_height(self):
-        """Height is captured *once* – ignore further messages afterward."""
-        try:
-            with serial.Serial(PORT, BAUD, timeout=1) as ser:
-                while self.height_cm is None:
-                    line = ser.readline().decode(errors="ignore").strip()
-                    if line.startswith("height value"):
-                        try:
-                            value = int(line.split(";")[1])
-                            self.root.after(0, self._update_height_once, value)
-                        except (IndexError, ValueError):
-                            continue
-        except serial.SerialException as e:
-            self._show_error(e)
+    # helper to schedule on main loop
+    def _dispatch(self, func, *args):
+        if self.running and None not in args:
+            self.root.after(0, func, *args)
 
-    def _read_sweat(self):
-        try:
-            with serial.Serial(PORT, BAUD, timeout=1) as ser:
-                while True:
-                    line = ser.readline().decode(errors="ignore").strip()
-                    if line.startswith("sweat value"):
-                        try:
-                            value = int(line.split(";")[1])
-                            self.root.after(0, self._update_sweat, value)
-                        except (IndexError, ValueError):
-                            continue
-        except serial.SerialException as e:
-            self._show_error(e)
+    # ───────────────────────── GUI updaters ──────────────────────────── #
 
-    # ───────────────────────────── GUI updates ───────────────────────────── #
-
-    def _update_posture(self, value: int):
-        self.posture_val_lbl.config(text=f"Valor flex: {value}")
-        correct = value >= POSTURE_THRESHOLD
-        self.posture_status_lbl.config(
-            text="Correcto" if correct else "Incorrecto",
-            fg="green" if correct else "red"
-        )
-        self.warnings["POSTURE"] = not correct
-        self._update_stress_level()
+    def _update_posture(self, v: int):
+        self.posture_val_lbl.config(text=f"Valor flex: {v}")
+        ok = v >= POSTURE_THRESHOLD
+        self.posture_status_lbl.config(text="Correcto" if ok else "Incorrecto", fg="green" if ok else "red")
+        self.warnings["POSTURE"] = not ok;
+        self._update_stress()
 
     def _update_pulse(self, bpm: int):
         self.pulse_val_lbl.config(text=f"Pulso: {bpm} bpm")
-        correct = PULSE_MIN <= bpm <= PULSE_MAX
-        self.pulse_status_lbl.config(
-            text="Normal" if correct else "Fuera de rango",
-            fg="green" if correct else "red"
-        )
-        self.warnings["PULSE"] = not correct
-        self._update_stress_level()
+        ok = PULSE_MIN <= bpm <= PULSE_MAX
+        self.pulse_status_lbl.config(text="Normal" if ok else "Fuera de rango", fg="green" if ok else "red")
+        self.warnings["PULSE"] = not ok;
+        self._update_stress()
 
-    def _update_height_once(self, value: int):
-        # value expected in centimetres from ultrasonic sensor
-        self.height_cm = value
-        self.bmi_height_lbl.config(text=f"Altura: {value} cm (sensor)")
-        # Trigger a BMI recalculation if weight already entered
-        self._calculate_bmi()
+    def _update_height_once(self, cm: int):
+        self.height_cm = cm
+        if self.bmi_height_lbl.winfo_exists():
+            self.bmi_height_lbl.config(text=f"Altura: {cm} cm (sensor)")
+        self._calc_bmi()
 
-    def _update_sweat(self, value: int):
-        self.sweat_val_lbl.config(text=f"Humedad: {value}")
-        correct = value < SWEAT_THRESHOLD
-        self.sweat_status_lbl.config(
-            text="Normal" if correct else "Alta",
-            fg="green" if correct else "red"
-        )
-        self.warnings["SWEAT"] = not correct
-        self._update_stress_level()
+    def _update_sweat(self, v: int):
+        self.sweat_val_lbl.config(text=f"Humedad: {v}")
+        ok = v < SWEAT_THRESHOLD
+        self.sweat_status_lbl.config(text="Normal" if ok else "Alta", fg="green" if ok else "red")
+        self.warnings["SWEAT"] = not ok;
+        self._update_stress()
 
-    # BMI – invoked by button or when height arrives ------------------------ #
-
-    def _calculate_bmi(self):
+    def _calc_bmi(self):
         if self.height_cm is None:
-            return  # Wait until height sensor delivers a value
-        try:
-            weight_txt = self.weight_entry.get().strip()
-            self.weight_kg = float(weight_txt) if weight_txt else None
-        except ValueError:
-            messagebox.showerror("Entrada incorrecta", "Ingrese un valor válido para el peso.")
             return
-
+        try:
+            txt = self.weight_entry.get().strip()
+            self.weight_kg = float(txt) if txt else None
+        except ValueError:
+            messagebox.showerror("Entrada incorrecta", "Ingrese un número válido para el peso.")
+            return
         if self.weight_kg is None:
             return
-
         h_m = self.height_cm / 100.0
         bmi = self.weight_kg / (h_m ** 2)
         self.bmi_result_lbl.config(text=f"BMI: {bmi:.1f}")
 
-    # Stress level ---------------------------------------------------------- #
-
-    def _update_stress_level(self):
-        n_warn = sum(self.warnings.values())
-        level = STRESS_LEVELS.get(n_warn, "Alto")
+    def _update_stress(self):
+        n = sum(self.warnings.values())
+        level = STRESS_LEVELS.get(n, "Alto")
         colour = "green" if level == "Bajo" else ("orange" if level == "Medio" else "red")
         self.stress_lbl.config(text=f"Nivel de estrés: {level}", fg=colour)
 
-    # ───────────────────────────── Error view ────────────────────────────── #
+    # ─────────────────────────── Error View ──────────────────────────── #
 
-    def _show_error(self, exc: Exception):
-        # Called from a thread; use after() to show in main loop
-        self.root.after(0, self._render_error, str(exc))
-
-    def _render_error(self, msg: str):
-        for w in self.root.winfo_children():
+    def _show_error(self, msg: str):
+        if not self.running:
+            return
+        self.running = False  # pause callbacks
+        self.main_frame.pack_forget()
+        for w in self.error_frame.winfo_children():
             w.destroy()
-        self._lbl(self.root, "No se detectó el dispositivo.\nVerifica la conexión.",
-                  font=("Helvetica", 16)).pack(expand=True)
-        ttk.Button(self.root, text="Reintentar", command=self._restart).pack(pady=12)
+        tk.Label(self.error_frame, text="No se detectó el dispositivo.\nVerifica la conexión.",
+                 fg=self.text_colour, font=("Helvetica", 16)).pack(expand=True)
+        ttk.Button(self.error_frame, text="Reintentar", command=self._restart).pack(pady=12)
+        self.error_frame.pack(expand=True, fill="both")
 
     def _restart(self):
-        # Completely restart the program (quick and dirty)
         python = sys.executable
         os.execl(python, python, *sys.argv)
 
 
-# ──────────────────────────────── Main ───────────────────────────────────── #
+# ─────────────────────────────── Main ───────────────────────────────── #
 
 if __name__ == "__main__":
     root = tk.Tk()

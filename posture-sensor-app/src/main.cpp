@@ -1,6 +1,9 @@
 #include <Arduino.h>
 
 int flexS = A0; // flex sensor is connected with pin A0 of the arduino
+int flexBuzzer = 5;
+int postureThreshold = 100;
+
 int pulseS = A1; // pulse sensor is connected with pin A1 of the arduino
 int heightS = A2; // temperature sensor is connected with pin A2 of the arduino
 int sweatS = A3; // sweat sensor is connected with pin A3 of the arduino
@@ -14,6 +17,7 @@ void setup()
 {
     Serial.begin(9600);
     pinMode(flexS, INPUT);
+    pinMode(flexBuzzer, OUTPUT);
 }
 
 void loop()
@@ -25,6 +29,14 @@ void loop()
     flexdata = analogRead(flexS);
     Serial.println("flex value;"
         + String(flexdata) );
+    if ( flexdata <= postureThreshold )
+    {
+        digitalWrite(flexBuzzer, HIGH);
+        delay(200); // Keep the buzzer on for 200 ms
+        digitalWrite(flexBuzzer, LOW);
+
+        Serial.println("Flex sensor is bent");
+    }
 
     // =======================================================
     // Sensor de pulso
@@ -51,7 +63,7 @@ void loop()
         + String(sweatdata) );
 
     // DELAY BETWEEN LOOPS
-    delay(1000);
+    delay(10);
 
     // END SENSOR LOOP
 }

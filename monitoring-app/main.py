@@ -19,10 +19,10 @@ def _find_arduino_port() -> str | None:
     return devices[0] if devices else None
 
 
-PORT = _find_arduino_port() or "/dev/tty.usbserial-2110"  # fallback
+PORT = _find_arduino_port() or "/dev/tty.usbserial-11101"  # fallback
 BAUD = 9600
 
-POSTURE_THRESHOLD = 220
+POSTURE_THRESHOLD = 100
 PULSE_MIN, PULSE_MAX = 50, 110
 SWEAT_THRESHOLD = 600
 # Seconds of history used to compute BPM from individual pulse events

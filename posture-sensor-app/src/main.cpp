@@ -18,7 +18,7 @@ int const SENSOR_DEFAULT_HEIGHT = 200; // default height of the ultrasonic senso
 
 // ============================================================
 // Sweat
-int sweatS = A3; // sweat sensor is connected with pin A3 of the arduino
+int sweatS = 2; // sweat sensor is connected with pin A3 of the arduino
 
 // ============================================================
 // READINGS
@@ -30,10 +30,14 @@ int sweatdata = 0;
 void setup()
 {
     Serial.begin(9600);
+    // Posture
     pinMode(flexS, INPUT);
     pinMode(flexBuzzer, OUTPUT);
+    // Height
     pinMode(trigS, OUTPUT);
     pinMode(echoS, INPUT);
+    // Sweat
+    pinMode(sweatS, INPUT);
 }
 
 void loop()
@@ -83,9 +87,12 @@ void loop()
     // Sensor de sudor
     // =======================================================
 
-    sweatdata = analogRead(sweatS);
-    Serial.println("sweat value;"
-        + String(sweatdata) );
+    sweatdata = digitalRead(sweatS);
+    if ( sweatdata == HIGH ) {
+        Serial.println("sweat value;1"); // Sweat detected
+    } else {
+        Serial.println("sweat value;0"); // No sweat detected
+    }
 
     // DELAY BETWEEN LOOPS
     delay(10);

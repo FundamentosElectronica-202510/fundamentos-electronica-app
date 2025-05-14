@@ -19,12 +19,12 @@ def _find_arduino_port() -> str | None:
     return devices[0] if devices else None
 
 
-PORT = _find_arduino_port() or "/dev/tty.usbserial-11101"  # fallback
+PORT = _find_arduino_port() or "/dev/tty.usbserial-usbmodem21101"  # fallback
 BAUD = 9600
 
 POSTURE_THRESHOLD = 100
 PULSE_MIN, PULSE_MAX = 50, 110
-SWEAT_THRESHOLD = 600
+
 # Seconds of history used to compute BPM from individual pulse events
 PULSE_WINDOW = 15  # seconds
 STRESS_LEVELS = {0: "Bajo", 1: "Medio", 2: "Alto", 3: "Alto"}
@@ -220,10 +220,11 @@ class FlexMonitorGUI:
         self._calc_bmi()
 
     def _update_sweat(self, v: int):
-        self.sweat_val_lbl.config(text=f"Humedad: {v}")
-        ok = v < SWEAT_THRESHOLD
+        # 0 = sweat, 1 = no sweat
+        ok = v == 1
+        self.sweat_val_lbl.config(text=f"Humedad: {v}... {'No se detecta sudor' if ok else 'Sudor detectado'}")
         self.sweat_status_lbl.config(text="Normal" if ok else "Alta", fg="green" if ok else "red")
-        self.warnings["SWEAT"] = not ok;
+        self.warnings["SWEAT"] = not ok
         self._update_stress()
 
     def _calc_bmi(self):

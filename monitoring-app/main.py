@@ -22,7 +22,7 @@ def _find_arduino_port() -> str | None:
 PORT = _find_arduino_port() or "/dev/tty.usbserial-usbmodem21101"  # fallback
 BAUD = 9600
 
-POSTURE_THRESHOLD = 100
+POSTURE_THRESHOLD = 900
 PULSE_MIN, PULSE_MAX = 50, 110
 
 # Seconds of history used to compute BPM from individual pulse events
@@ -190,7 +190,7 @@ class FlexMonitorGUI:
 
     def _update_posture(self, v: int):
         self.posture_val_lbl.config(text=f"Valor flex: {v}")
-        ok = v >= POSTURE_THRESHOLD
+        ok = v <= POSTURE_THRESHOLD
         self.posture_status_lbl.config(text="Correcto" if ok else "Incorrecto", fg="green" if ok else "red")
         self.warnings["POSTURE"] = not ok;
         self._update_stress()

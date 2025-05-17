@@ -10,17 +10,46 @@ from collections import deque
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-
 # ────────────────────────────── Config ──────────────────────────────── #
 
-def _find_arduino_port() -> str | None:
-    """Return the first /dev/tty.usbmodem* device found (macOS)."""
-    devices = glob.glob("/dev/tty.usbmodem*")
-    return devices[0] if devices else None
+import serial.tools.list_ports
 
 
-PORT = _find_arduino_port() or "/dev/tty.usbserial-usbmodem21101"  # fallback
-BAUD = 9600
+def _find_esp32_bt_port() -> str | None:
+    """
+    Try to locate the virtual COM port that the ESP32 exposes over
+    classic-Bluetooth SPP.  Strategy (in order):
+
+    1. macOS/Linux  : look for known USB-UART nodes (/dev/ttyUSB*,
+                      /dev/cu.SLAB_USBtoUART*, etc.).
+    2. Windows      : choose the first port whose description mentions
+                      'Bluetooth' or the Microsoft BTHENUM driver.
+    3. Fallback     : first enumerated serial port (least reliable).
+    """
+    # 1) macOS / Linux
+    patterns = (
+        "/dev/ttyUSB*", "/dev/ttyACM*",  # Linux
+        "/dev/cu.SLAB_USBtoUART*", "/dev/cu.usbserial*"  # macOS CP210x/FTDI
+    )
+    for pat in patterns:
+        devs = glob.glob(pat)
+        if devs:
+            return devs[0]
+
+    # 2) Windows or generic listing
+    for p in serial.tools.list_ports.comports():
+        if ("Bluetooth" in p.description or
+                "Standard Serial over Bluetooth" in p.description or
+                "BTHENUM" in p.hwid):
+            return p.device
+
+    # 3) last resort: first enumerated port
+    ports = [p.device for p in serial.tools.list_ports.comports()]
+    return ports[0] if ports else None
+
+
+PORT = _find_esp32_bt_port() or "COM8"  # personalise fallback if needed
+BAUD = 9600  # 9600 matches the ESP32 sketch
 
 POSTURE_THRESHOLD = 900
 PULSE_MIN, PULSE_MAX = 50, 110

@@ -48,7 +48,7 @@ def _find_esp32_bt_port() -> str | None:
     return ports[0] if ports else None
 
 
-PORT = _find_esp32_bt_port() or "COM8"  # personalise fallback if needed
+PORT = _find_esp32_bt_port() or "COM11"  # personalise fallback if needed
 BAUD = 9600  # 9600 matches the ESP32 sketch
 
 POSTURE_THRESHOLD = 900

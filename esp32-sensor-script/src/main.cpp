@@ -1,9 +1,11 @@
 #include <Arduino.h>
+#include "BluetoothSerial.h"
 
-// Use Serial2 for Bluetooth (RX = GPIO16, TX = GPIO17, change if needed)
-#define BT_RX 16
-#define BT_TX 17
-HardwareSerial BT(2); // UART2
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error "Bluetooth is not enabled in this build. Please enable it in the menuconfig. (make menuconfig)"
+#endif
+
+BluetoothSerial BT;
 
 // Pin assignments (GPIO)
 const int flexS = 36; // Analog input (VP)
@@ -27,7 +29,7 @@ int cycleCounter = 0;
 
 void setup() {
     Serial.begin(115200);
-    BT.begin(9600, SERIAL_8N1, BT_RX, BT_TX); // UART2 with defined RX/TX
+    BT.begin("ESP32BT-NVLPZ");
 
     pinMode(flexS, INPUT);
     pinMode(pulseS, INPUT);

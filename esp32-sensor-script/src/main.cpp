@@ -40,6 +40,7 @@ void setup() {
 void loop() {
     // --- Posture Sensor ---
     flexdata = analogRead(flexS);
+    BT.println("flex value;" + String(flexdata));
     Serial.println("flex value;" + String(flexdata));
     if (flexdata <= postureThreshold) {
         cycleCounter++;
@@ -54,6 +55,7 @@ void loop() {
 
     // --- Pulse Sensor ---
     pulsedata = analogRead(pulseS);
+    BT.println("pulse value;" + String(pulsedata));
     Serial.println("pulse value;" + String(pulsedata));
 
     // --- Height Sensor (Ultrasonic) ---
@@ -65,10 +67,12 @@ void loop() {
 
     unsigned long duration = pulseIn(echoS, HIGH, 30000); // 30ms timeout
     float distance = SENSOR_DEFAULT_HEIGHT - ((duration * 0.034) / 2);
+    BT.println("height value;" + String(distance));
     Serial.println("height value;" + String(distance));
 
     // --- Sweat Sensor ---
     sweatdata = digitalRead(sweatS);
+    BT.println("sweat value;" + String(sweatdata));
     Serial.println("sweat value;" + String(sweatdata));
 
     delay(10);

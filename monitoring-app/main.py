@@ -167,11 +167,11 @@ class FlexMonitorGUI:
 
     # Helper to extract int safely
     @staticmethod
-    def _extract_int(line: str) -> int | None:
+    def _extract_int(line: str) -> float | None:
         try:
             val_part = line.split(";", 1)[1]
-            digits = ''.join(ch for ch in val_part if ch.isdigit())
-            return int(digits) if digits else None
+            digits = ''.join( ch for ch in val_part if (ch.isdigit() or ch == "."))
+            return float(digits) if digits else None
         except (IndexError, ValueError):
             return None
 

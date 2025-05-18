@@ -233,16 +233,6 @@ class FlexMonitorGUI:
         self.warnings["PULSE"] = not ok
         self._update_stress()
 
-        # compute BPM as (pulses / seconds) * 60
-        bpm = int(len(self.pulse_times) / PULSE_WINDOW * 60)
-
-        self.pulse_val_lbl.config(text=f"Pulso: {bpm} bpm")
-        ok = PULSE_MIN <= bpm <= PULSE_MAX
-        self.pulse_status_lbl.config(text="Normal" if ok else "Fuera de rango",
-                                     fg="green" if ok else "red")
-        self.warnings["PULSE"] = not ok
-        self._update_stress()
-
     def _update_height_once(self, cm: int):
         self.height_cm = cm
         if self.bmi_height_lbl.winfo_exists():

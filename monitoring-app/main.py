@@ -221,13 +221,17 @@ class FlexMonitorGUI:
         self.warnings["POSTURE"] = not ok;
         self._update_stress()
 
-    def _update_pulse(self, _placeholder: int | None = None):
-        """Handle a single pulse event and update BPM."""
-        now = time.time()
-        self.pulse_times.append(now)
-        # keep only events inside the time window
-        while self.pulse_times and now - self.pulse_times[0] > PULSE_WINDOW:
-            self.pulse_times.popleft()
+    def _update_pulse(self, bpm: int):
+        """Show BPM sent by the ESP32 (“bpm value;NN”)."""
+        self.pulse_val_lbl.config(text=f"Pulso: {bpm} bpm")
+
+        ok = PULSE_MIN <= bpm <= PULSE_MAX
+        self.pulse_status_lbl.config(
+            text="Normal" if ok else "Fuera de rango",
+            fg="green" if ok else "red"
+        )
+        self.warnings["PULSE"] = not ok
+        self._update_stress()
 
         # compute BPM as (pulses / seconds) * 60
         bpm = int(len(self.pulse_times) / PULSE_WINDOW * 60)

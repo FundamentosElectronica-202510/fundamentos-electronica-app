@@ -20,8 +20,14 @@ const int SENSOR_DEFAULT_HEIGHT = 200;
 // Thresholds
 int postureThreshold = 100;
 int postureCycleThreshold = 50;
-int pulseThreshold = 1000;
-int pulseCycleThreshold = 10;
+
+/* --- BPM calculation state --- */
+const int   PULSE_THRESHOLD      = 500;   // tweak if your sensor’s baseline is different
+const int   HYSTERESIS           = 30;    // stops double-triggering on noise
+const ulong BPM_WINDOW_MS        = 10000; // 10-second counting window
+bool        pulseLow             = true;  // remembers whether the last sample was “low”
+ulong       windowStartMs        = 0;     // start time of the current 10-s window
+int         beatCount            = 0;     // pulses detected in the current window
 
 int flexdata = 0;
 int pulsedata = 0;
@@ -58,18 +64,31 @@ void loop() {
         postureCycleThreshold = 0;
     }
 
-    // --- Pulse Sensor ---
+    // --- Pulse Sensor (BPM) ---
     pulsedata = analogRead(pulseS);
 
-    if (pulsedata > pulseThreshold) {
-        pulseCycleCounter++;
-        if (pulseCycleCounter >= pulseCycleThreshold) {
-            BT.println("pulse value;" + String(1));
-            Serial.println("pulse value;" + String(1));
-            pulseCycleCounter = 0;
-        }
-    } else {
-        pulseCycleCounter = 0;
+    /* Rising-edge detection with hysteresis
+     *  – “pulseLow” is true when we are below the threshold
+     *  – we register a beat only when we cross from low → high
+     */
+    if (pulseLow && pulsedata > PULSE_THRESHOLD) {
+        pulseLow   = false;          // we are now “high”
+        beatCount++;                 // one more beat in this 10-s window
+    }
+    else if (!pulseLow && pulsedata < PULSE_THRESHOLD - HYSTERESIS) {
+        pulseLow = true;             // reset so we can detect the next beat
+    }
+
+    /* Every 10 s, convert count → BPM, transmit, and restart window */
+    ulong now = millis();
+    if (now - windowStartMs >= BPM_WINDOW_MS) {
+        int bpm = beatCount * (60000 / BPM_WINDOW_MS); // = beatCount × 6
+        BT.println("bpm value;" + String(bpm));
+        Serial.println("bpm value;" + String(bpm));
+
+        // reset for next window
+        beatCount      = 0;
+        windowStartMs  = now;
     }
     
 

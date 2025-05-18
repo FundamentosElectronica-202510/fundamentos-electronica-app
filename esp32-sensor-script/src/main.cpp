@@ -11,7 +11,7 @@ BluetoothSerial BT;
 const int flexS = 33; // Analog input (VP)
 const int pulseS = 35; // Analog input (VN)
 const int sweatS = 26; // Digital input
-const int flexBuzzer = 13; // Digital output
+const int flexBuzzer = 23; // Digital output
 
 const int trigS = 12; // Ultrasonic trigger
 const int echoS = 14; // Ultrasonic echo

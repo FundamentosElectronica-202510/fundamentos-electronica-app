@@ -51,7 +51,7 @@ def _find_esp32_bt_port() -> str | None:
 PORT = _find_esp32_bt_port() or "COM10"  # personalise fallback if needed
 BAUD = 9600  # 9600 matches the ESP32 sketch
 
-POSTURE_THRESHOLD = 3500
+POSTURE_THRESHOLD = 4050
 
 PULSE_MIN, PULSE_MAX = 50, 110
 
@@ -216,7 +216,7 @@ class FlexMonitorGUI:
 
     def _update_posture(self, v: int):
         self.posture_val_lbl.config(text=f"Valor flex: {v}")
-        ok = v <= POSTURE_THRESHOLD
+        ok = v >= POSTURE_THRESHOLD
         self.posture_status_lbl.config(text="Correcto" if ok else "Incorrecto", fg="green" if ok else "red")
         self.warnings["POSTURE"] = not ok;
         self._update_stress()

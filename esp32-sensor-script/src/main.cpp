@@ -11,15 +11,15 @@ BluetoothSerial BT;
 const int flexS = 33; // Analog input (VP)
 const int pulseS = 35; // Analog input (VN)
 const int sweatS = 26; // Digital input
-const int flexBuzzer = 18; // Digital output
+const int flexBuzzer = 13; // Digital output
 
 const int trigS = 12; // Ultrasonic trigger
 const int echoS = 14; // Ultrasonic echo
 const int SENSOR_DEFAULT_HEIGHT = 200;
 
 // Thresholds
-int postureThreshold = 100;
-int postureCycleThreshold = 50;
+const int POSTURE_THRESHOLD = 4050;
+const int POSTURE_CYCLE_THRESHOLD = 50;
 
 /* --- BPM calculation state --- */
 const int PULSE_THRESHOLD = 1200; // tweak if your sensor’s baseline is different
@@ -53,15 +53,16 @@ void loop() {
     flexdata = analogRead(flexS);
     BT.println("flex value;" + String(flexdata));
     Serial.println("flex value;" + String(flexdata));
-    if (flexdata <= postureThreshold) {
-        postureCycleThreshold++;
-        if (postureCycleThreshold >= postureCycleThreshold) {
+    if (flexdata < POSTURE_THRESHOLD) {
+        postureCycleCounter++;
+        if (postureCycleCounter > POSTURE_CYCLE_THRESHOLD) {
             digitalWrite(flexBuzzer, HIGH);
-            delay(200);
+            delay(100);
             digitalWrite(flexBuzzer, LOW);
+            postureCycleCounter = 0;
         }
     } else {
-        postureCycleThreshold = 0;
+        postureCycleCounter = 0;
     }
 
     // --- Pulse Sensor (BPM) ---

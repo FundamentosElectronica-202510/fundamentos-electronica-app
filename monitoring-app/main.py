@@ -233,7 +233,7 @@ class FlexMonitorGUI:
         self.warnings["PULSE"] = not ok
         self._update_stress()
 
-    def _update_height_once(self, cm: int):
+    def _update_height_once(self, cm: float):
         self.height_cm = cm
         if self.bmi_height_lbl.winfo_exists():
             self.bmi_height_lbl.config(text=f"Altura: {cm} cm (sensor)")

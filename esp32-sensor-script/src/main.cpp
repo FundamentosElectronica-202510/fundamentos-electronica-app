@@ -8,24 +8,27 @@
 BluetoothSerial BT;
 
 // Pin assignments (GPIO)
-const int flexS = 36; // Analog input (VP)
-const int pulseS = 39; // Analog input (VN)
-const int sweatS = 19; // Digital input
+const int flexS = 33; // Analog input (VP)
+const int pulseS = 35; // Analog input (VN)
+const int sweatS = 26; // Digital input
 const int flexBuzzer = 18; // Digital output
 
-const int trigS = 4; // Ultrasonic trigger
-const int echoS = 5; // Ultrasonic echo
+const int trigS = 12; // Ultrasonic trigger
+const int echoS = 14; // Ultrasonic echo
 const int SENSOR_DEFAULT_HEIGHT = 200;
 
 // Thresholds
 int postureThreshold = 100;
-int cycleThreshold = 50;
+int postureCycleThreshold = 50;
+int pulseThreshold = 1000;
+int pulseCycleThreshold = 10;
 
 int flexdata = 0;
 int pulsedata = 0;
 int heightdata = 0;
 int sweatdata = 0;
-int cycleCounter = 0;
+int postureCycleCounter = 0;
+int pulseCycleCounter = 0;
 
 void setup() {
     Serial.begin(115200);
@@ -45,20 +48,30 @@ void loop() {
     BT.println("flex value;" + String(flexdata));
     Serial.println("flex value;" + String(flexdata));
     if (flexdata <= postureThreshold) {
-        cycleCounter++;
-        if (cycleCounter >= cycleThreshold) {
+        postureCycleThreshold++;
+        if (postureCycleThreshold >= postureCycleThreshold) {
             digitalWrite(flexBuzzer, HIGH);
             delay(200);
             digitalWrite(flexBuzzer, LOW);
         }
     } else {
-        cycleCounter = 0;
+        postureCycleThreshold = 0;
     }
 
     // --- Pulse Sensor ---
     pulsedata = analogRead(pulseS);
-    BT.println("pulse value;" + String(pulsedata));
-    Serial.println("pulse value;" + String(pulsedata));
+
+    if (pulsedata > pulseThreshold) {
+        pulseCycleCounter++;
+        if (pulseCycleCounter >= pulseCycleThreshold) {
+            BT.println("pulse value;" + String(1));
+            Serial.println("pulse value;" + String(1));
+            pulseCycleCounter = 0;
+        }
+    } else {
+        pulseCycleCounter = 0;
+    }
+    
 
     // --- Height Sensor (Ultrasonic) ---
     digitalWrite(trigS, LOW);

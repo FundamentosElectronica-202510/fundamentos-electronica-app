@@ -48,10 +48,11 @@ def _find_esp32_bt_port() -> str | None:
     return ports[0] if ports else None
 
 
-PORT = _find_esp32_bt_port() or "COM11"  # personalise fallback if needed
+PORT = _find_esp32_bt_port() or "COM10"  # personalise fallback if needed
 BAUD = 9600  # 9600 matches the ESP32 sketch
 
-POSTURE_THRESHOLD = 900
+POSTURE_THRESHOLD = 3500
+
 PULSE_MIN, PULSE_MAX = 50, 110
 
 # Seconds of history used to compute BPM from individual pulse events
@@ -191,17 +192,13 @@ class FlexMonitorGUI:
                     for line in raw.decode(errors="ignore").split("\n"):
                         line = line.strip()
                         if not line:
-                            continue
-                        # Handle pulse events first – they may not carry a numeric payload
-                        if line.startswith("pulse value;"):
-                            self._dispatch(self._update_pulse, None)
-                            continue
-
+                            continue             
                         value = self._extract_int(line)
                         if value is None:
                             continue
-
-                        if line.startswith("flex value;"):
+                        if line.startswith("pulse value;"):
+                            self._dispatch(self._update_pulse, value)
+                        elif line.startswith("flex value;"):
                             self._dispatch(self._update_posture, value)
                         elif line.startswith("height value;") and self.height_cm is None:
                             self._dispatch(self._update_height_once, value)

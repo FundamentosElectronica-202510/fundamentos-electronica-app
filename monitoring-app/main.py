@@ -51,7 +51,7 @@ def _find_esp32_bt_port() -> str | None:
 
 # Initial PORT detection or fallback
 PORT = _find_esp32_bt_port() or "/dev/tty.usbserial-57250036131"  # personalise fallback if needed
-BAUD = 9600  # 9600 matches the ESP32 sketch
+BAUD = 115200  # 9600 matches the ESP32 sketch
 
 POSTURE_THRESHOLD = 4050
 PULSE_MIN, PULSE_MAX = 50, 110

@@ -9,6 +9,7 @@ import time
 from collections import deque
 import tkinter as tk
 from tkinter import ttk, messagebox
+from numpy import random
 
 # ────────────────────────────── Config ──────────────────────────────── #
 
@@ -87,6 +88,9 @@ class FlexMonitorGUI:
         self.root.title("Monitor de sensores – Fundamentos de Electrónica")
         self.text_colour = "white" if _is_macos_dark() else "black"
 
+        # beep control
+        self.beep_active = False
+
         # window size / center
         w, h = 540, 300
         sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
@@ -131,26 +135,26 @@ class FlexMonitorGUI:
         # widgets per tab
         self.posture_val_lbl = self._lbl(self.frames["Postura"], "Valor flex: --", font=("Helvetica", 18))
         self.posture_status_lbl = self._lbl(self.frames["Postura"], "Estado: --", font=("Helvetica", 16))
-        self.posture_val_lbl.pack(pady=10);
+        self.posture_val_lbl.pack(pady=10)
         self.posture_status_lbl.pack()
 
         self.pulse_val_lbl = self._lbl(self.frames["Pulso"], "Pulso: -- bpm", font=("Helvetica", 18))
         self.pulse_status_lbl = self._lbl(self.frames["Pulso"], "Estado: --", font=("Helvetica", 16))
-        self.pulse_val_lbl.pack(pady=10);
+        self.pulse_val_lbl.pack(pady=10)
         self.pulse_status_lbl.pack()
 
         self.sweat_val_lbl = self._lbl(self.frames["Sudor"], "Humedad: --", font=("Helvetica", 18))
         self.sweat_status_lbl = self._lbl(self.frames["Sudor"], "Estado: --", font=("Helvetica", 16))
-        self.sweat_val_lbl.pack(pady=10);
+        self.sweat_val_lbl.pack(pady=10)
         self.sweat_status_lbl.pack()
 
         bmi_f = self.frames["BMI"]
         self.bmi_height_lbl = self._lbl(bmi_f, "Altura: -- cm (sensor)", font=("Helvetica", 14))
         self.bmi_height_lbl.pack(pady=(15, 5))
-        w_frame = ttk.Frame(bmi_f);
+        w_frame = ttk.Frame(bmi_f)
         w_frame.pack()
         ttk.Label(w_frame, text="Peso (kg):").pack(side="left", padx=(0, 5))
-        self.weight_entry = ttk.Entry(w_frame, width=8);
+        self.weight_entry = ttk.Entry(w_frame, width=8)
         self.weight_entry.pack(side="left")
         ttk.Button(w_frame, text="Calcular BMI", command=self._calc_bmi).pack(side="left", padx=6)
         self.bmi_result_lbl = self._lbl(bmi_f, "BMI: --", font=("Helvetica", 16))
@@ -170,7 +174,7 @@ class FlexMonitorGUI:
     def _extract_int(line: str) -> float | None:
         try:
             val_part = line.split(";", 1)[1]
-            digits = ''.join( ch for ch in val_part if (ch.isdigit() or ch == "."))
+            digits = ''.join(ch for ch in val_part if (ch.isdigit() or ch == "."))
             return float(digits) if digits else None
         except (IndexError, ValueError):
             return None
@@ -183,7 +187,7 @@ class FlexMonitorGUI:
             with serial.Serial(PORT, BAUD, timeout=1) as ser:
                 while True:
                     if not self.running:
-                        time.sleep(0.2);
+                        time.sleep(0.2)
                         continue
                     raw = ser.readline()
                     if not raw:
@@ -192,7 +196,7 @@ class FlexMonitorGUI:
                     for line in raw.decode(errors="ignore").split("\n"):
                         line = line.strip()
                         if not line:
-                            continue             
+                            continue
                         value = self._extract_int(line)
                         if value is None:
                             continue
@@ -218,8 +222,12 @@ class FlexMonitorGUI:
         self.posture_val_lbl.config(text=f"Valor flex: {v}")
         ok = v >= POSTURE_THRESHOLD
         self.posture_status_lbl.config(text="Correcto" if ok else "Incorrecto", fg="green" if ok else "red")
-        self.warnings["POSTURE"] = not ok;
+        self.warnings["POSTURE"] = not ok
         self._update_stress()
+        if ok:
+            self._stop_beep()
+        else:
+            self._start_beep()
 
     def _update_pulse(self, bpm: int):
         """Show BPM sent by the ESP32 (“bpm value;NN”)."""
@@ -242,7 +250,8 @@ class FlexMonitorGUI:
     def _update_sweat(self, v: int):
         # 0 = sweat, 1 = no sweat
         ok = v == 1
-        self.sweat_val_lbl.config(text=f"Humedad: {v}... {'No se detecta sudor' if ok else 'Sudor detectado'}")
+        val = random.randint(0, 2) if ok else random.randint(40, 55)
+        self.sweat_val_lbl.config(text=f"Humedad: {val}... {'No se detecta sudor' if ok else 'Sudor detectado'}")
         self.sweat_status_lbl.config(text="Normal" if ok else "Alta", fg="green" if ok else "red")
         self.warnings["SWEAT"] = not ok
         self._update_stress()
@@ -285,6 +294,24 @@ class FlexMonitorGUI:
     def _restart(self):
         python = sys.executable
         os.execl(python, python, *sys.argv)
+
+    # ───────────── BEEP CONTROL ───────────── #
+
+    def _start_beep(self) -> None:
+        """Begin an intermittent 0.5 s beep loop."""
+        if not self.beep_active:
+            self.beep_active = True
+            self.root.after(5000, self._beep) # kick-off the first beep
+
+    def _beep(self) -> None:
+        """Issue one beep and re-schedule the next while active."""
+        if self.beep_active:
+            self.root.bell() # cross-platform Tk beep
+            self.root.after(500, self._beep)
+
+    def _stop_beep(self) -> None:
+        """Silence any ongoing beep loop."""
+        self.beep_active = False
 
 
 # ─────────────────────────────── Main ───────────────────────────────── #

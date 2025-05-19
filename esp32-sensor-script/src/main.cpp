@@ -19,7 +19,7 @@ const int SENSOR_DEFAULT_HEIGHT = 200;
 
 // Thresholds
 const int POSTURE_THRESHOLD = 4050;
-const int POSTURE_CYCLE_THRESHOLD = 50;
+const int POSTURE_CYCLE_THRESHOLD = 5;
 
 /* --- BPM calculation state --- */
 const int PULSE_THRESHOLD = 1200; // tweak if your sensor’s baseline is different
@@ -57,7 +57,7 @@ void loop() {
         postureCycleCounter++;
         if (postureCycleCounter > POSTURE_CYCLE_THRESHOLD) {
             digitalWrite(flexBuzzer, HIGH);
-            delay(100);
+            delay(50);
             digitalWrite(flexBuzzer, LOW);
             postureCycleCounter = 0;
         }
@@ -109,5 +109,5 @@ void loop() {
     BT.println("sweat value;" + String(sweatdata));
     Serial.println("sweat value;" + String(sweatdata));
 
-    delay(10);
+    delay(250);
 }

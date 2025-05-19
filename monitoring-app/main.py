@@ -51,7 +51,7 @@ def _find_esp32_bt_port() -> str | None:
 
 # Initial PORT detection or fallback
 PORT = _find_esp32_bt_port() or "/dev/tty.usbserial-57250036131"  # personalise fallback if needed
-BAUD = 115200  # 9600 matches the ESP32 sketch
+BAUD = 9600  # 9600 matches the ESP32 sketch
 
 POSTURE_THRESHOLD = 4050
 PULSE_MIN, PULSE_MAX = 50, 110
@@ -87,6 +87,12 @@ class FlexMonitorGUI:
         self.text_colour = "white" if _is_macos_dark() else "black"
 
         self.beep_active = False
+
+        # Stress calculation
+        self.I = None # BMI
+        self.H = None # Humidity
+        self.P = None # Pulse
+        self.S = None # Posture
 
         w, h = 600, 380  # Adjusted size for new widgets
         sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
@@ -170,6 +176,8 @@ class FlexMonitorGUI:
         self.bmi_result_lbl.pack(pady=10)
 
         # Widgets for Nivel de estrés tab
+        self.stress_value_lbl = self._lbl(self.frames["Nivel de estrés"], "Valor de estrés: --", font=("Helvetica", 18))
+        self.stress_value_lbl.pack(expand=True, pady=20)
         self.stress_lbl = self._lbl(self.frames["Nivel de estrés"], "Nivel de estrés: --", font=("Helvetica", 20))
         self.stress_lbl.pack(expand=True, pady=20)
 
@@ -359,6 +367,8 @@ class FlexMonitorGUI:
         if hasattr(self, 'bmi_result_lbl') and self.bmi_result_lbl.winfo_exists():
             self.bmi_result_lbl.config(text="BMI: --")
 
+        if hasattr(self, 'stress_value_lbl') and self.stress_value_lbl.winfo_exists():
+            self.stress_value_lbl.config(text="Valor de estrés: --")
         if hasattr(self, 'stress_lbl') and self.stress_lbl.winfo_exists():
             self.stress_lbl.config(text="Nivel de estrés: --", fg=self.text_colour)
 
@@ -417,6 +427,7 @@ class FlexMonitorGUI:
     # ───────────────────────── GUI updaters ──────────────────────────── #
     def _update_posture(self, v: int):
         self.posture_val_lbl.config(text=f"Valor flex: {v}")
+        self.S = v # update for stress calculation
         ok = v >= POSTURE_THRESHOLD
         self.posture_status_lbl.config(text="Correcto" if ok else "Incorrecto", fg="green" if ok else "red")
         self.warnings["POSTURE"] = not ok
@@ -428,6 +439,7 @@ class FlexMonitorGUI:
 
     def _update_pulse(self, bpm: int):
         self.pulse_val_lbl.config(text=f"Pulso: {bpm} bpm")
+        self.P = bpm  # update for stress calculation
         ok = PULSE_MIN <= bpm <= PULSE_MAX
         self.pulse_status_lbl.config(
             text="Normal" if ok else "Fuera de rango",
@@ -446,6 +458,7 @@ class FlexMonitorGUI:
         ok = v == 1
         val = random.randint(0, 10) if ok else random.randint(40, 75)
         self.sweat_val_lbl.config(text=f"Humedad: {val}%")
+        self.H = val/100  # update for stress calculation
         self.sweat_status_lbl.config(text="Normal (No se detecta sudor)" if ok else "Alta (Sudor detectado)",
                                      fg="green" if ok else "red")
         self.warnings["SWEAT"] = not ok
@@ -476,12 +489,20 @@ class FlexMonitorGUI:
             return
         bmi = self.weight_kg / (h_m ** 2)
         self.bmi_result_lbl.config(text=f"BMI: {bmi:.1f}")
+        self.I = bmi
 
     def _update_stress(self):
         n = sum(self.warnings.values())
+
+        if (self.I is None or self.H is None or self.P is None or self.S is None):
+            return
+
+        stress = ( ( self.I * self.H ) + ( self.P * self.P ) ) / ( self.S + 1 )
+
         level = STRESS_LEVELS.get(n, STRESS_LEVELS[
             max(STRESS_LEVELS.keys()) if STRESS_LEVELS else 3])  # Default to highest defined stress if n is out of typical range
         colour = "green" if level == "Bajo" else ("orange" if level == "Medio" else "red")
+        self.stress_value_lbl.config(text=f"Valor de estrés: {stress:.2f}", fg=colour)
         self.stress_lbl.config(text=f"Nivel de estrés: {level}", fg=colour)
 
     # ───────────── BEEP CONTROL ───────────── #

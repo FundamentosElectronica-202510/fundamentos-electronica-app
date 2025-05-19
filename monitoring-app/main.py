@@ -475,8 +475,8 @@ class FlexMonitorGUI:
                 return
             self.weight_kg = float(txt)
         except ValueError:
-            messagebox.showerror("Entrada incorrecta", "Ingrese un número válido para el peso.", parent=self.root)
             self.weight_kg = None
+            messagebox.showerror("Entrada incorrecta", "Ingrese un número válido para el peso.", parent=self.root)
             return
 
         if self.weight_kg is None or self.weight_kg <= 0:

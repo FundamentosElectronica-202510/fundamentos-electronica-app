@@ -88,6 +88,7 @@ class FlexMonitorGUI:
 
         self.beep_active = False
         self.height_read = False
+        self.humidity_cycle_count = 0
 
         # Stress calculation
         self.I = None # BMI
@@ -320,8 +321,11 @@ class FlexMonitorGUI:
                         elif line.startswith("height value;") and not self.height_read:  # Removed "and self.height_cm is None" to allow re-reading if needed
                             self.height_read = True
                             self._dispatch(self._update_height_once, value)
-                        elif line.startswith("sweat value;"):
+                        elif line.startswith("sweat value;") and self.humidity_cycle_count > 5:
+                            self.humidity_cycle_count = 0
                             self._dispatch(self._update_sweat, value)
+                        elif line.startswith("sweat value;"):
+                            self.humidity_cycle_count += 1
         except serial.SerialException as e:
             error_message = f"No se pudo conectar al puerto '{port_to_try}'."
             if "FileNotFoundError" in str(e) or "Errno 2" in str(e):

@@ -87,6 +87,7 @@ class FlexMonitorGUI:
         self.text_colour = "white" if _is_macos_dark() else "black"
 
         self.beep_active = False
+        self.height_read = False
 
         # Stress calculation
         self.I = None # BMI
@@ -316,8 +317,8 @@ class FlexMonitorGUI:
                             self._dispatch(self._update_pulse, value)
                         elif line.startswith("flex value;"):
                             self._dispatch(self._update_posture, value)
-                        elif line.startswith(
-                                "height value;"):  # Removed "and self.height_cm is None" to allow re-reading if needed
+                        elif line.startswith("height value;") and not self.height_read:  # Removed "and self.height_cm is None" to allow re-reading if needed
+                            self.height_read = True
                             self._dispatch(self._update_height_once, value)
                         elif line.startswith("sweat value;"):
                             self._dispatch(self._update_sweat, value)

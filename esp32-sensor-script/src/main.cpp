@@ -17,7 +17,7 @@ Adafruit_MPU6050 mpu; // NEW: MPU-6050 sensor object
 // const int flexS = 33; // OLD: This pin is no longer used for posture
 const int pulseS = 35; // Analog input (VN)
 const int sweatS = 26; // Digital input
-const int flexBuzzer = 23; // Digital output (still used for posture alert)
+const int flexBuzzer = 27; // Digital output (still used for posture alert)
 
 const int trigS = 12; // Ultrasonic trigger
 const int echoS = 14; // Ultrasonic echo

@@ -56,7 +56,9 @@ def _find_esp32_bt_port() -> str | None:
 PORT = _find_esp32_bt_port() or "/dev/tty.usbserial-57250036131"  # personalise fallback if needed
 BAUD = 115200  # 9600 matches the ESP32 sketch
 
-POSTURE_THRESHOLD = 4050
+# NEW: Angle threshold for posture
+POSTURE_ANGLE_THRESHOLD = 25  # Angle in degrees for "bad posture"
+
 PULSE_MIN, PULSE_MAX = 50, 110
 PULSE_WINDOW = 15
 STRESS_LEVELS = {0: "Bajo", 1: "Medio", 2: "Alto", 3: "Alto"}
@@ -89,7 +91,7 @@ class FlexMonitorGUI:
         self.root.title("Monitor de sensores – Fundamentos de Electrónica")
         self.text_colour = "white" if _is_macos_dark() else "black"
 
-        self.beep_active = False
+        self.beep_active = False # ADDED BACK: For GUI beeping
         self.height_read = False
         self.humidity_cycle_count = 0
 
@@ -152,9 +154,12 @@ class FlexMonitorGUI:
 
     def _populate_tabs(self):
         # Widgets for Postura tab
-        self.posture_val_lbl = self._lbl(self.frames["Postura"], "Valor flex: --", font=("Helvetica", 18))
+        self.posture_pitch_lbl = self._lbl(self.frames["Postura"], "Pitch: -- °", font=("Helvetica", 18))
+        self.posture_roll_lbl = self._lbl(self.frames["Postura"], "Roll: -- °", font=("Helvetica", 18))
         self.posture_status_lbl = self._lbl(self.frames["Postura"], "Estado: --", font=("Helvetica", 16))
-        self.posture_val_lbl.pack(pady=20, padx=10, expand=True)
+        
+        self.posture_pitch_lbl.pack(pady=(20, 5), padx=10, expand=True)
+        self.posture_roll_lbl.pack(pady=5, padx=10, expand=True)
         self.posture_status_lbl.pack(pady=10, padx=10, expand=True)
 
         # Widgets for Pulso tab
@@ -294,8 +299,11 @@ class FlexMonitorGUI:
     def _extract_int(line: str) -> float | None:
         try:
             val_part = line.split(";", 1)[1]
-            digits = ''.join(ch for ch in val_part if (ch.isdigit() or ch == "."))
-            return float(digits) if digits else None
+            # MODIFIED: Allow negative sign for pitch/roll
+            digits = ''.join(ch for ch in val_part if (ch.isdigit() or ch == "." or ch == "-"))
+            if not digits or digits == "-":
+                 return None
+            return float(digits)
         except (IndexError, ValueError):
             return None
 
@@ -337,11 +345,14 @@ class FlexMonitorGUI:
                         if value is None:
                             continue
 
+                        # MODIFIED: Listen for pitch and roll
                         if line.startswith("pulse value;"):
                             self._dispatch(self._update_pulse, value)
-                        elif line.startswith("flex value;"):
-                            self._dispatch(self._update_posture, value)
-                        elif line.startswith("height value;") and not self.height_read:  # Removed "and self.height_cm is None" to allow re-reading if needed
+                        elif line.startswith("pitch value;"):
+                            self._dispatch(self._update_pitch, value)
+                        elif line.startswith("roll value;"):
+                            self._dispatch(self._update_roll, value)
+                        elif line.startswith("height value;") and not self.height_read:
                             self.height_read = True
                             self._dispatch(self._update_height_once, value)
                         elif line.startswith("sweat value;") and self.humidity_cycle_count > 5:
@@ -378,8 +389,10 @@ class FlexMonitorGUI:
                 self.root.after(0, func, *args)
 
     def _reset_ui_status(self):
-        if hasattr(self, 'posture_val_lbl') and self.posture_val_lbl.winfo_exists():
-            self.posture_val_lbl.config(text="Valor flex: --")
+        # MODIFIED: Reset new posture labels
+        if hasattr(self, 'posture_pitch_lbl') and self.posture_pitch_lbl.winfo_exists():
+            self.posture_pitch_lbl.config(text="Pitch: -- °")
+            self.posture_roll_lbl.config(text="Roll: -- °")
             self.posture_status_lbl.config(text="Estado: --", fg=self.text_colour)
 
         if hasattr(self, 'pulse_val_lbl') and self.pulse_val_lbl.winfo_exists():
@@ -453,17 +466,34 @@ class FlexMonitorGUI:
         # print(f"Mostrando error: {msg}")
 
     # ───────────────────────── GUI updaters ──────────────────────────── #
-    def _update_posture(self, v: int):
-        self.posture_val_lbl.config(text=f"Valor flex: {v}")
-        self.S = v # update for stress calculation
-        ok = v >= POSTURE_THRESHOLD
+    
+    # NEW: Function to handle pitch updates
+    def _update_pitch(self, v: float):
+        """Called when a new 'pitch' value arrives."""
+        self.posture_pitch_lbl.config(text=f"Pitch: {v:.2f}°")
+        
+        # Determine posture status
+        ok = abs(v) <= POSTURE_ANGLE_THRESHOLD
         self.posture_status_lbl.config(text="Correcto" if ok else "Incorrecto", fg="green" if ok else "red")
         self.warnings["POSTURE"] = not ok
+
+        # --- Stress Calculation Update ---
+        # Simulate old flex sensor value to keep stress formula balanced
+        # High value = good posture, Low value = bad posture
+        self.S = 4100 if ok else 3000 
+        
         self._update_stress()
+
+        # --- ADDED BACK: Beep Control ---
         if ok:
             self._stop_beep()
         else:
             self._start_beep()
+
+    # NEW: Function to handle roll updates
+    def _update_roll(self, v: float):
+        """Called when a new 'roll' value arrives."""
+        self.posture_roll_lbl.config(text=f"Roll: {v:.2f}°")
 
     def _update_pulse(self, bpm: int):
         # Update labels
@@ -566,17 +596,23 @@ class FlexMonitorGUI:
         self.stress_lbl.config(text=f"Nivel de estrés: {level}", fg=colour)
 
     # ───────────── BEEP CONTROL ───────────── #
+    # ADDED BACK
     def _start_beep(self) -> None:
         if not self.beep_active:
             self.beep_active = True
+            # Start the beep loop if posture is bad
             self.root.after(100, self._perform_beep_if_needed)
 
     def _perform_beep_if_needed(self):
+        # This check is important:
+        # Only beep if beep_active is True AND posture is bad
         if self.beep_active and self.warnings["POSTURE"]:
-            self.root.bell()
+            self.root.bell() # Make the system beep sound
+            # Check again in 600ms
             self.root.after(600, self._perform_beep_if_needed)
 
     def _stop_beep(self) -> None:
+        # This stops the loop
         self.beep_active = False
 
 

@@ -10,6 +10,9 @@ from collections import deque
 import tkinter as tk
 from tkinter import ttk, messagebox
 from numpy import random  # Assuming this is used, though not directly in the provided snippet for port logic
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+
 
 # ────────────────────────────── Config ──────────────────────────────── #
 
@@ -112,7 +115,9 @@ class FlexMonitorGUI:
         self.height_cm: float | None = None
         self.weight_kg: float | None = None
         self.warnings = {"POSTURE": False, "PULSE": False, "SWEAT": False}
-        self.pulse_times = deque()
+        self.pulse_times = deque()  # timestamps (seconds)
+        self.pulse_values = deque()  # bpm values
+        self.pulse_window_seconds = 60  # show last 60s on the graph
 
         self._start_serial_reader()
 
@@ -153,10 +158,28 @@ class FlexMonitorGUI:
         self.posture_status_lbl.pack(pady=10, padx=10, expand=True)
 
         # Widgets for Pulso tab
-        self.pulse_val_lbl = self._lbl(self.frames["Pulso"], "Pulso: -- bpm", font=("Helvetica", 18))
-        self.pulse_status_lbl = self._lbl(self.frames["Pulso"], "Estado: --", font=("Helvetica", 16))
-        self.pulse_val_lbl.pack(pady=20, padx=10, expand=True)
-        self.pulse_status_lbl.pack(pady=10, padx=10, expand=True)
+        pulse_top = ttk.Frame(self.frames["Pulso"])
+        pulse_top.pack(side="top", fill="x")
+
+        self.pulse_val_lbl = self._lbl(pulse_top, "Pulso: -- bpm", font=("Helvetica", 18))
+        self.pulse_status_lbl = self._lbl(pulse_top, "Estado: --", font=("Helvetica", 16))
+        self.pulse_val_lbl.pack(pady=5, padx=10)
+        self.pulse_status_lbl.pack(pady=5, padx=10)
+
+        # Graph area for pulse
+        self.pulse_fig = Figure(figsize=(4, 2), dpi=100)
+        self.pulse_ax = self.pulse_fig.add_subplot(111)
+        self.pulse_ax.set_title("Pulso en tiempo real")
+        self.pulse_ax.set_xlabel("Tiempo (s)")
+        self.pulse_ax.set_ylabel("bpm")
+        self.pulse_ax.set_ylim(PULSE_MIN - 10, PULSE_MAX + 10)
+
+        # Empty line to be updated on each new value
+        (self.pulse_line,) = self.pulse_ax.plot([], [])
+
+        self.pulse_canvas = FigureCanvasTkAgg(self.pulse_fig, master=self.frames["Pulso"])
+        self.pulse_canvas.draw()
+        self.pulse_canvas.get_tk_widget().pack(side="top", fill="both", expand=True, padx=10, pady=10)
 
         # Widgets for Sudor tab
         self.sweat_val_lbl = self._lbl(self.frames["Sudor"], "Humedad: --", font=("Helvetica", 18))
@@ -443,15 +466,48 @@ class FlexMonitorGUI:
             self._start_beep()
 
     def _update_pulse(self, bpm: int):
-        self.pulse_val_lbl.config(text=f"Pulso: {bpm} bpm")
-        self.P = bpm  # update for stress calculation
-        ok = PULSE_MIN <= bpm <= PULSE_MAX
+        # Update labels
+        bpm_int = int(bpm)
+        self.pulse_val_lbl.config(text=f"Pulso: {bpm_int} bpm")
+        self.P = bpm_int  # update for stress calculation
+        ok = PULSE_MIN <= bpm_int <= PULSE_MAX
         self.pulse_status_lbl.config(
             text="Normal" if ok else "Fuera de rango",
             fg="green" if ok else "red"
         )
         self.warnings["PULSE"] = not ok
         self._update_stress()
+
+        # --- Graph update ---
+        # Current timestamp
+        t = time.time()
+        self.pulse_times.append(t)
+        self.pulse_values.append(bpm_int)
+
+        # Keep only the last N seconds of data
+        while self.pulse_times and (t - self.pulse_times[0]) > self.pulse_window_seconds:
+            self.pulse_times.popleft()
+            self.pulse_values.popleft()
+
+        # If the graph widgets exist, refresh the line
+        if hasattr(self, "pulse_line") and self.pulse_times:
+            t0 = self.pulse_times[0]
+            xs = [tt - t0 for tt in self.pulse_times]  # seconds since first sample
+            ys = list(self.pulse_values)
+
+            self.pulse_line.set_data(xs, ys)
+
+            # Adjust X limits to current time window
+            self.pulse_ax.set_xlim(0, max(xs) if xs else 1)
+
+            # Optionally auto-scale Y a bit around the values
+            # or keep the fixed range based on PULSE_MIN/MAX
+            # Here we auto-scale but keep some padding:
+            ymin = min(ys) - 5
+            ymax = max(ys) + 5
+            self.pulse_ax.set_ylim(ymin, ymax)
+
+            self.pulse_canvas.draw_idle()
 
     def _update_height_once(self, cm: float):
         self.height_cm = cm  # Store the new height

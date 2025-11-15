@@ -1,35 +1,42 @@
 #include <Arduino.h>
 #include "BluetoothSerial.h"
 
+// --- NEW: Includes for Gyroscope (MPU-6050) ---
+#include <Wire.h>
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
+
 #if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
 #error "Bluetooth is not enabled in this build. Please enable it in the menuconfig. (make menuconfig)"
 #endif
 
 BluetoothSerial BT;
+Adafruit_MPU6050 mpu; // NEW: MPU-6050 sensor object
 
 // Pin assignments (GPIO)
-const int flexS = 33; // Analog input (VP)
+// const int flexS = 33; // OLD: This pin is no longer used for posture
 const int pulseS = 35; // Analog input (VN)
 const int sweatS = 26; // Digital input
-const int flexBuzzer = 23; // Digital output
+const int flexBuzzer = 23; // Digital output (still used for posture alert)
 
 const int trigS = 12; // Ultrasonic trigger
 const int echoS = 14; // Ultrasonic echo
 const int SENSOR_DEFAULT_HEIGHT = 200;
 
 // Thresholds
-const int POSTURE_THRESHOLD = 4050;
+// const int POSTURE_THRESHOLD = 4050; // OLD: Flex sensor threshold
+const int POSTURE_ANGLE_THRESHOLD = 25; // NEW: Angle in degrees (e.g., 25°) for "bad posture"
 const int POSTURE_CYCLE_THRESHOLD = 5;
 
 /* --- BPM calculation state --- */
-const int PULSE_THRESHOLD = 1200; // tweak if your sensor’s baseline is different
-const int HYSTERESIS = 30; // stops double-triggering on noise
-const ulong BPM_WINDOW_MS = 10000; // 10-second counting window
-bool pulseLow = true; // remembers whether the last sample was “low”
-ulong windowStartMs = 0; // start time of the current 10-s window
-int beatCount = 0; // pulses detected in the current window
+const int PULSE_THRESHOLD = 1200; 
+const int HYSTERESIS = 30; 
+const ulong BPM_WINDOW_MS = 10000; 
+bool pulseLow = true; 
+ulong windowStartMs = 0; 
+int beatCount = 0; 
 
-int flexdata = 0;
+// int flexdata = 0; // OLD
 int pulsedata = 0;
 int heightdata = 0;
 int sweatdata = 0;
@@ -40,7 +47,30 @@ void setup() {
     Serial.begin(115200);
     BT.begin("ESP32BT-NVLPZ");
 
-    pinMode(flexS, INPUT);
+    // --- NEW: Initialize I2C and MPU-6050 ---
+    // Use default ESP32 I2C pins (SDA=21, SCL=22)
+    // NEW line in setup()
+    if (!Wire.begin(32, 13)) { // (SDA, SCL)
+        Serial.println("Failed to initialize I2C bus");
+        while (1); // Stop execution
+    }
+
+    if (!mpu.begin()) {
+        Serial.println("Failed to find MPU6050 chip");
+        BT.println("MPU6050 Not Found");
+        while (1) {
+            delay(10);
+        }
+    }
+    Serial.println("MPU6050 Found!");
+
+    // NEW: Set sensor ranges (optional but recommended)
+    mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+    mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+    // --- End of NEW MPU-6050 setup ---
+
+    // pinMode(flexS, INPUT); // OLD
     pinMode(pulseS, INPUT);
     pinMode(sweatS, INPUT);
     pinMode(flexBuzzer, OUTPUT);
@@ -49,7 +79,39 @@ void setup() {
 }
 
 void loop() {
-    // --- Posture Sensor ---
+    // --- NEW: Posture Sensor (MPU-6050) ---
+    sensors_event_t a, g, temp;
+    mpu.getEvent(&a, &g, &temp);
+
+    // Calculate Pitch and Roll from accelerometer data
+    // These angles represent the sensor's orientation relative to gravity
+    float pitch = atan2(-a.acceleration.x, sqrt(a.acceleration.y * a.acceleration.y + a.acceleration.z * a.acceleration.z)) * 180.0 / M_PI;
+    float roll = atan2(a.acceleration.y, a.acceleration.z) * 180.0 / M_PI;
+
+    // Send posture data over BT and Serial
+    BT.println("pitch value;" + String(pitch));
+    BT.println("roll value;" + String(roll));
+    Serial.println("pitch value;" + String(pitch));
+    Serial.println("roll value;" + String(roll));
+
+    // Check for bad posture (e.g., slouching forward/backward)
+    // We use abs() to catch tilting too far forward OR backward
+    if (abs(pitch) > POSTURE_ANGLE_THRESHOLD) {
+        postureCycleCounter++;
+        if (postureCycleCounter > POSTURE_CYCLE_THRESHOLD) {
+            digitalWrite(flexBuzzer, HIGH);
+            delay(50);
+            digitalWrite(flexBuzzer, LOW);
+            postureCycleCounter = 0; // Reset counter after buzzing
+        }
+    } else {
+        // Posture is good, reset the counter
+        postureCycleCounter = 0;
+    }
+    // --- End of NEW Posture Sensor logic ---
+
+
+    /* // --- OLD Posture Sensor Logic (Commented out) ---
     flexdata = analogRead(flexS);
     BT.println("flex value;" + String(flexdata));
     Serial.println("flex value;" + String(flexdata));
@@ -64,29 +126,25 @@ void loop() {
     } else {
         postureCycleCounter = 0;
     }
+    */
+
 
     // --- Pulse Sensor (BPM) ---
     pulsedata = analogRead(pulseS);
 
-    /* Rising-edge detection with hysteresis
-     *  – “pulseLow” is true when we are below the threshold
-     *  – we register a beat only when we cross from low → high
-     */
     if (pulseLow && pulsedata > PULSE_THRESHOLD) {
-        pulseLow = false; // we are now “high”
-        beatCount++; // one more beat in this 10-s window
+        pulseLow = false; 
+        beatCount++; 
     } else if (!pulseLow && pulsedata < PULSE_THRESHOLD - HYSTERESIS) {
-        pulseLow = true; // reset so we can detect the next beat
+        pulseLow = true; 
     }
 
-    /* Every X s, convert count → BPM, transmit, and restart window */
     ulong now = millis();
     if (now - windowStartMs >= BPM_WINDOW_MS) {
         int bpm = beatCount * (60000 / BPM_WINDOW_MS); // = beatCount × 6
         BT.println("pulse value;" + String(bpm));
         Serial.println("pulse value;" + String(bpm));
 
-        // reset for next window
         beatCount = 0;
         windowStartMs = now;
     }

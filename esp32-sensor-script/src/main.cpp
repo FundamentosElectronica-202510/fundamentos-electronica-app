@@ -15,13 +15,16 @@ Adafruit_MPU6050 mpu; // NEW: MPU-6050 sensor object
 
 // Pin assignments (GPIO)
 // const int flexS = 33; // OLD: This pin is no longer used for posture
-const int pulseS = 35; // Analog input (VN)
-const int sweatS = 26; // Digital input
-const int flexBuzzer = 27; // Digital output (still used for posture alert)
+const int pulseS = 35; // Analog input (VN) --------------------------------------------------- Sensor de pulso = 35
+const int sweatS = 26; // Digital input ------------------------------------------------------- Sensor de sudor = 26
+const int flexBuzzer = 27; // Digital output (still used for posture alert) ------------------- Buzzer = 27
 
-const int trigS = 12; // Ultrasonic trigger
-const int echoS = 14; // Ultrasonic echo
+const int trigS = 12; // Ultrasonic trigger --------------------------------------------------- Sensor altura TRIGGER = 12
+const int echoS = 14; // Ultrasonic echo ------------------------------------------------------ Sensor Altura ECHO = 14
 const int SENSOR_DEFAULT_HEIGHT = 200;
+
+const int postureS_SDA = 32; // GY-88 --------------------------------------------------------- Sensor Postura SDA = 32
+const int postureS_SCL = 13; // GY-88 --------------------------------------------------------- Sensor Postura SCL = 13
 
 // Thresholds
 // const int POSTURE_THRESHOLD = 4050; // OLD: Flex sensor threshold
@@ -50,7 +53,7 @@ void setup() {
     // --- NEW: Initialize I2C and MPU-6050 ---
     // Use default ESP32 I2C pins (SDA=21, SCL=22)
     // NEW line in setup()
-    if (!Wire.begin(32, 13)) { // (SDA, SCL)
+    if (!Wire.begin(postureS_SDA, postureS_SCL)) {
         Serial.println("Failed to initialize I2C bus");
         while (1); // Stop execution
     }

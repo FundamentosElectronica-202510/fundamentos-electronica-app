@@ -16,11 +16,11 @@ Adafruit_MPU6050 mpu; // NEW: MPU-6050 sensor object
 // Pin assignments (GPIO)
 // const int flexS = 33; // OLD: This pin is no longer used for posture
 const int pulseS = 35; // Analog input (VN) --------------------------------------------------- Sensor de pulso = 35
-const int sweatS = 26; // Digital input ------------------------------------------------------- Sensor de sudor = 26
-const int flexBuzzer = 27; // Digital output (still used for posture alert) ------------------- Buzzer = 27
+const int sweatS = 5; // Digital input -------------------------------------------------------- Sensor de sudor = 5
+const int flexBuzzer = 4; // Digital output (still used for posture alert) -------------------- Buzzer = 27
 
-const int trigS = 12; // Ultrasonic trigger --------------------------------------------------- Sensor altura TRIGGER = 12
-const int echoS = 14; // Ultrasonic echo ------------------------------------------------------ Sensor Altura ECHO = 14
+const int trigS = 18; // Ultrasonic trigger --------------------------------------------------- Sensor altura TRIGGER = 12
+const int echoS = 16; // Ultrasonic echo ------------------------------------------------------ Sensor Altura ECHO = 14
 const int SENSOR_DEFAULT_HEIGHT = 200;
 
 const int postureS_SDA = 32; // GY-88 --------------------------------------------------------- Sensor Postura SDA = 32
@@ -33,7 +33,7 @@ const int POSTURE_CYCLE_THRESHOLD = 5;
 
 /* --- BPM calculation state --- */
 const int PULSE_THRESHOLD = 1200; 
-const int HYSTERESIS = 30; 
+const int HYSTERESIS = 30;
 const ulong BPM_WINDOW_MS = 10000; 
 bool pulseLow = true; 
 ulong windowStartMs = 0; 

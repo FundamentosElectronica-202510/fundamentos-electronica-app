@@ -182,9 +182,9 @@ class FlexMonitorGUI:
         # Empty line to be updated on each new value
         (self.pulse_line,) = self.pulse_ax.plot([], [])
 
-        self.pulse_canvas = FigureCanvasTkAgg(self.pulse_fig, master=self.frames["Pulso"])
-        self.pulse_canvas.draw()
-        self.pulse_canvas.get_tk_widget().pack(side="top", fill="both", expand=True, padx=10, pady=10)
+        #self.pulse_canvas = FigureCanvasTkAgg(self.pulse_fig, master=self.frames["Pulso"])
+        #self.pulse_canvas.draw()
+        #self.pulse_canvas.get_tk_widget().pack(side="top", fill="both", expand=True, padx=10, pady=10)
 
         # Widgets for Sudor tab
         self.sweat_val_lbl = self._lbl(self.frames["Sudor"], "Humedad: --", font=("Helvetica", 18))
@@ -497,7 +497,7 @@ class FlexMonitorGUI:
 
     def _update_pulse(self, bpm: int):
         # Update labels
-        bpm_int = int(bpm)
+        bpm_int = int(bpm)*1.5
         self.pulse_val_lbl.config(text=f"Pulso: {bpm_int} bpm")
         self.P = bpm_int  # update for stress calculation
         ok = PULSE_MIN <= bpm_int <= PULSE_MAX
@@ -537,7 +537,7 @@ class FlexMonitorGUI:
             ymax = max(ys) + 5
             self.pulse_ax.set_ylim(ymin, ymax)
 
-            self.pulse_canvas.draw_idle()
+            #self.pulse_canvas.draw_idle()
 
     def _update_height_once(self, cm: float):
         self.height_cm = cm  # Store the new height
@@ -547,8 +547,8 @@ class FlexMonitorGUI:
 
     def _update_sweat(self, v: int):
         ok = v == 1
-        val = random.randint(0, 10) if ok else random.randint(40, 75)
-        self.sweat_val_lbl.config(text=f"Humedad: {val}%")
+        val = 1 if ok else 0
+        self.sweat_val_lbl.config(text=f"Humedad: {val}")
         self.H = val/100  # update for stress calculation
         self.sweat_status_lbl.config(text="Normal (No se detecta sudor)" if ok else "Alta (Sudor detectado)",
                                      fg="green" if ok else "red")

@@ -16,7 +16,7 @@ Adafruit_MPU6050 mpu; // NEW: MPU-6050 sensor object
 // Pin assignments (GPIO)
 // const int flexS = 33; // OLD: This pin is no longer used for posture
 const int pulseS = 35; // Analog input (VN) --------------------------------------------------- Sensor de pulso = 35
-const int sweatS = 5; // Digital input -------------------------------------------------------- Sensor de sudor = 5
+const int sweatS = 26; // Digital input -------------------------------------------------------- Sensor de sudor = 5
 const int flexBuzzer = 4; // Digital output (still used for posture alert) -------------------- Buzzer = 27
 
 const int trigS = 18; // Ultrasonic trigger --------------------------------------------------- Sensor altura TRIGGER = 12
@@ -61,9 +61,6 @@ void setup() {
     if (!mpu.begin()) {
         Serial.println("Failed to find MPU6050 chip");
         BT.println("MPU6050 Not Found");
-        while (1) {
-            delay(10);
-        }
     }
     Serial.println("MPU6050 Found!");
 
@@ -135,19 +132,27 @@ void loop() {
     // --- Pulse Sensor (BPM) ---
     pulsedata = analogRead(pulseS);
 
+    Serial.println("Pulse raw data: " + String(pulsedata)); // Debug line to see raw pulse data
+
+    Serial.println("Pulse low: " + String(pulseLow)); // Debug line to see threshold
+
     if (pulseLow && pulsedata > PULSE_THRESHOLD) {
+        Serial.println("Llegamos a + Beats :3"); // Debug line to see threshold
         pulseLow = false; 
         beatCount++; 
     } else if (!pulseLow && pulsedata < PULSE_THRESHOLD - HYSTERESIS) {
         pulseLow = true; 
     }
 
+    Serial.println("Pulse low: " + String(pulseLow)); // Debug line to see threshold
+    Serial.println("Beat Count: " + String(beatCount)); // Debug line to see beat count
+
     ulong now = millis();
     if (now - windowStartMs >= BPM_WINDOW_MS) {
+        Serial.println("Llegamos a + BPM :3"); // Debug line to see threshold
         int bpm = beatCount * (60000 / BPM_WINDOW_MS); // = beatCount × 6
         BT.println("pulse value;" + String(bpm));
         Serial.println("pulse value;" + String(bpm));
-
         beatCount = 0;
         windowStartMs = now;
     }

@@ -32,9 +32,9 @@ const int POSTURE_ANGLE_THRESHOLD = 25; // NEW: Angle in degrees (e.g., 25°) fo
 const int POSTURE_CYCLE_THRESHOLD = 5;
 
 /* --- BPM calculation state --- */
-const int PULSE_THRESHOLD = 1200; 
+const int PULSE_THRESHOLD = 1800; 
 const int HYSTERESIS = 30;
-const ulong BPM_WINDOW_MS = 10000; 
+const ulong BPM_WINDOW_MS = 5000; 
 bool pulseLow = true; 
 ulong windowStartMs = 0; 
 int beatCount = 0; 
@@ -132,24 +132,15 @@ void loop() {
     // --- Pulse Sensor (BPM) ---
     pulsedata = analogRead(pulseS);
 
-    Serial.println("Pulse raw data: " + String(pulsedata)); // Debug line to see raw pulse data
-
-    Serial.println("Pulse low: " + String(pulseLow)); // Debug line to see threshold
-
     if (pulseLow && pulsedata > PULSE_THRESHOLD) {
-        Serial.println("Llegamos a + Beats :3"); // Debug line to see threshold
         pulseLow = false; 
         beatCount++; 
     } else if (!pulseLow && pulsedata < PULSE_THRESHOLD - HYSTERESIS) {
         pulseLow = true; 
     }
 
-    Serial.println("Pulse low: " + String(pulseLow)); // Debug line to see threshold
-    Serial.println("Beat Count: " + String(beatCount)); // Debug line to see beat count
-
     ulong now = millis();
     if (now - windowStartMs >= BPM_WINDOW_MS) {
-        Serial.println("Llegamos a + BPM :3"); // Debug line to see threshold
         int bpm = beatCount * (60000 / BPM_WINDOW_MS); // = beatCount × 6
         BT.println("pulse value;" + String(bpm));
         Serial.println("pulse value;" + String(bpm));
@@ -174,6 +165,4 @@ void loop() {
     sweatdata = digitalRead(sweatS);
     BT.println("sweat value;" + String(sweatdata));
     Serial.println("sweat value;" + String(sweatdata));
-
-    delay(250);
 }

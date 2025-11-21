@@ -120,6 +120,7 @@ class FlexMonitorGUI:
         self.pulse_times = deque()  # timestamps (seconds)
         self.pulse_values = deque()  # bpm values
         self.pulse_window_seconds = 60  # show last 60s on the graph
+        self.past_pulses = [] # historical pulse values for graphing
 
         self._start_serial_reader()
 
@@ -497,47 +498,35 @@ class FlexMonitorGUI:
 
     def _update_pulse(self, bpm: int):
         # Update labels
-        bpm_int = int(bpm)*1.5
-        self.pulse_val_lbl.config(text=f"Pulso: {bpm_int} bpm")
-        self.P = bpm_int  # update for stress calculation
-        ok = PULSE_MIN <= bpm_int <= PULSE_MAX
+        if bpm < 40 or bpm > 200:
+            bpm = 0  # Filter out unrealistic low values
+            self.past_pulses = []
+        bpm_int = int(bpm)
+        l = len(self.past_pulses)
+        if l > 3:
+            self.past_pulses.pop(0)
+        
+        if bpm_int != 0: self.past_pulses.append( bpm_int )
+        sum = 0
+        i = 0
+        
+        if l > 0:
+            while i < l:
+                sum += self.past_pulses[i]
+                i += 1
+            mean = sum / l
+        else:
+            mean = 0
+        
+        self.pulse_val_lbl.config(text=f"Pulso: {mean} bpm")
+        self.P = mean  # update for stress calculation
+        ok = PULSE_MIN <= mean <= PULSE_MAX
         self.pulse_status_lbl.config(
             text="Normal" if ok else "Fuera de rango",
             fg="green" if ok else "red"
         )
         self.warnings["PULSE"] = not ok
         self._update_stress()
-
-        # --- Graph update ---
-        # Current timestamp
-        t = time.time()
-        self.pulse_times.append(t)
-        self.pulse_values.append(bpm_int)
-
-        # Keep only the last N seconds of data
-        while self.pulse_times and (t - self.pulse_times[0]) > self.pulse_window_seconds:
-            self.pulse_times.popleft()
-            self.pulse_values.popleft()
-
-        # If the graph widgets exist, refresh the line
-        if hasattr(self, "pulse_line") and self.pulse_times:
-            t0 = self.pulse_times[0]
-            xs = [tt - t0 for tt in self.pulse_times]  # seconds since first sample
-            ys = list(self.pulse_values)
-
-            self.pulse_line.set_data(xs, ys)
-
-            # Adjust X limits to current time window
-            self.pulse_ax.set_xlim(0, max(xs) if xs else 1)
-
-            # Optionally auto-scale Y a bit around the values
-            # or keep the fixed range based on PULSE_MIN/MAX
-            # Here we auto-scale but keep some padding:
-            ymin = min(ys) - 5
-            ymax = max(ys) + 5
-            self.pulse_ax.set_ylim(ymin, ymax)
-
-            #self.pulse_canvas.draw_idle()
 
     def _update_height_once(self, cm: float):
         self.height_cm = cm  # Store the new height

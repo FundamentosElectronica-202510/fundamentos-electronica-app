@@ -494,13 +494,14 @@ class FlexMonitorGUI:
     # NEW: Function to handle roll updates
     def _update_roll(self, v: float):
         """Called when a new 'roll' value arrives."""
-        self.posture_roll_lbl.config(text=f"Roll: {v:.2f}°")
+        self.posture_roll_lbl.config(text=f"Rol3l: {v:.2f}°")
 
     def _update_pulse(self, bpm: int):
         # Update labels
         if bpm < 40 or bpm > 200:
             bpm = 0  # Filter out unrealistic low values
             self.past_pulses = []
+            
         bpm_int = int(bpm)
         l = len(self.past_pulses)
         if l > 3:

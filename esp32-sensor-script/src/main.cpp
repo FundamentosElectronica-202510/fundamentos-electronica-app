@@ -19,9 +19,9 @@ const int pulseS = 35; // Analog input (VN) ------------------------------------
 const int sweatS = 26; // Digital input -------------------------------------------------------- Sensor de sudor = 5
 const int flexBuzzer = 4; // Digital output (still used for posture alert) -------------------- Buzzer = 27
 
-const int trigS = 18; // Ultrasonic trigger --------------------------------------------------- Sensor altura TRIGGER = 12
-const int echoS = 16; // Ultrasonic echo ------------------------------------------------------ Sensor Altura ECHO = 14
-const int SENSOR_DEFAULT_HEIGHT = 200;
+const int trigS = 18; // Ultrasonic trigger --------------------------------------------------- Sensor altura TRIGGER = 18
+const int echoS = 25; // Ultrasonic echo ------------------------------------------------------ Sensor Altura ECHO = 16
+const int SENSOR_DEFAULT_HEIGHT = 178;
 
 const int postureS_SDA = 32; // GY-88 --------------------------------------------------------- Sensor Postura SDA = 32
 const int postureS_SCL = 13; // GY-88 --------------------------------------------------------- Sensor Postura SCL = 13

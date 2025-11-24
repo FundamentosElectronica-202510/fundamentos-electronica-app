@@ -1,17 +1,11 @@
 import glob
-import os
 import platform
 import subprocess
-import sys
 import serial
 import threading
-import time
 from collections import deque
 import tkinter as tk
 from tkinter import ttk, messagebox
-from numpy import random  # Assuming this is used, though not directly in the provided snippet for port logic
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
 
 
 # ────────────────────────────── Config ──────────────────────────────── #
@@ -59,7 +53,7 @@ BAUD = 115200  # 9600 matches the ESP32 sketch
 # NEW: Angle threshold for posture
 POSTURE_ANGLE_THRESHOLD = 25  # Angle in degrees for "bad posture"
 
-PULSE_MIN, PULSE_MAX = 50, 110
+PULSE_MIN, PULSE_MAX = 50, 100
 PULSE_WINDOW = 15
 STRESS_LEVELS = {0: "Bajo", 1: "Medio", 2: "Alto", 3: "Alto"}
 
@@ -96,10 +90,10 @@ class FlexMonitorGUI:
         self.humidity_cycle_count = 0
 
         # Stress calculation
-        self.I = None # BMI
-        self.H = None # Humidity
-        self.P = None # Pulse
-        self.S = None # Posture
+        self.BMI = None # BMI
+        self.Humidity = None # Humidity
+        self.Pulse = None # Pulse
+        self.Posture = None # Posture
 
         w, h = 600, 380  # Adjusted size for new widgets
         sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
@@ -118,8 +112,6 @@ class FlexMonitorGUI:
         self.weight_kg: float | None = None
         self.warnings = {"POSTURE": False, "PULSE": False, "SWEAT": False}
         self.pulse_times = deque()  # timestamps (seconds)
-        self.pulse_values = deque()  # bpm values
-        self.pulse_window_seconds = 60  # show last 60s on the graph
         self.past_pulses = [] # historical pulse values for graphing
 
         self._start_serial_reader()
@@ -172,37 +164,45 @@ class FlexMonitorGUI:
         self.pulse_val_lbl.pack(pady=5, padx=10)
         self.pulse_status_lbl.pack(pady=5, padx=10)
 
-        # Graph area for pulse
-        self.pulse_fig = Figure(figsize=(4, 2), dpi=100)
-        self.pulse_ax = self.pulse_fig.add_subplot(111)
-        self.pulse_ax.set_title("Pulso en tiempo real")
-        self.pulse_ax.set_xlabel("Tiempo (s)")
-        self.pulse_ax.set_ylabel("bpm")
-        self.pulse_ax.set_ylim(PULSE_MIN - 10, PULSE_MAX + 10)
-
-        # Empty line to be updated on each new value
-        (self.pulse_line,) = self.pulse_ax.plot([], [])
-
-        #self.pulse_canvas = FigureCanvasTkAgg(self.pulse_fig, master=self.frames["Pulso"])
-        #self.pulse_canvas.draw()
-        #self.pulse_canvas.get_tk_widget().pack(side="top", fill="both", expand=True, padx=10, pady=10)
-
         # Widgets for Sudor tab
         self.sweat_val_lbl = self._lbl(self.frames["Sudor"], "Humedad: --", font=("Helvetica", 18))
         self.sweat_status_lbl = self._lbl(self.frames["Sudor"], "Estado: --", font=("Helvetica", 16))
         self.sweat_val_lbl.pack(pady=20, padx=10, expand=True)
         self.sweat_status_lbl.pack(pady=10, padx=10, expand=True)
 
-        # Widgets for BMI tab
+        # ─────────────────── BMI Tab Modifications ─────────────────── #
         bmi_f = self.frames["BMI"]
-        self.bmi_height_lbl = self._lbl(bmi_f, "Altura: -- cm (sensor)", font=("Helvetica", 14))
-        self.bmi_height_lbl.pack(pady=(15, 5))
+
+        # 1. Height Section with Reset Button
+        h_frame = ttk.Frame(bmi_f)
+        h_frame.pack(pady=(15, 5))
+
+        self.bmi_height_lbl = self._lbl(h_frame, "Altura: -- cm (sensor)", font=("Helvetica", 14))
+        self.bmi_height_lbl.pack(side="left", padx=(0, 10))
+
+        # NEW: Button to re-read height
+        ttk.Button(h_frame, text="↻ Re-leer Altura", command=self._reset_height).pack(side="left")
+
+        # 2. Gender Selection
+        self.gender_var = tk.StringVar(value="Hombre")
+        g_frame = ttk.Frame(bmi_f)
+        g_frame.pack(pady=5)
+
+        ttk.Label(g_frame, text="Sexo:").pack(side="left", padx=(0, 10))
+        ttk.Radiobutton(g_frame, text="Hombre", variable=self.gender_var, value="Hombre").pack(side="left", padx=5)
+        ttk.Radiobutton(g_frame, text="Mujer", variable=self.gender_var, value="Mujer").pack(side="left", padx=5)
+
+        # 3. Weight and Calculation
         w_frame = ttk.Frame(bmi_f)
-        w_frame.pack()
+        w_frame.pack(pady=10)
+
         ttk.Label(w_frame, text="Peso (kg):").pack(side="left", padx=(0, 5))
         self.weight_entry = ttk.Entry(w_frame, width=8)
         self.weight_entry.pack(side="left")
+
         ttk.Button(w_frame, text="Calcular BMI", command=self._calc_bmi).pack(side="left", padx=6)
+
+        # 4. Result
         self.bmi_result_lbl = self._lbl(bmi_f, "BMI: --", font=("Helvetica", 16))
         self.bmi_result_lbl.pack(pady=10)
 
@@ -481,7 +481,7 @@ class FlexMonitorGUI:
         # --- Stress Calculation Update ---
         # Simulate old flex sensor value to keep stress formula balanced
         # High value = good posture, Low value = bad posture
-        self.S = 4100 if ok else 3000 
+        self.Posture = 4100 if ok else 3000
         
         self._update_stress()
 
@@ -520,7 +520,7 @@ class FlexMonitorGUI:
             mean = 0
         
         self.pulse_val_lbl.config(text=f"Pulso: {mean} bpm")
-        self.P = mean  # update for stress calculation
+        self.Pulse = mean  # update for stress calculation
         ok = PULSE_MIN <= mean <= PULSE_MAX
         self.pulse_status_lbl.config(
             text="Normal" if ok else "Fuera de rango",
@@ -535,11 +535,20 @@ class FlexMonitorGUI:
             self.bmi_height_lbl.config(text=f"Altura: {cm:.1f} cm (sensor)")
         self._calc_bmi()  # Recalculate BMI if height changes
 
+    def _reset_height(self):
+        """Resets the height flag so the serial loop can update it again."""
+        self.height_read = False
+        self.height_cm = None
+        self.bmi_height_lbl.config(text="Altura: -- cm (Esperando sensor...)")
+        self.bmi_result_lbl.config(text="BMI: --")
+        # Optional: Clear weight or keep it
+        # self.weight_entry.delete(0, tk.END)
+
     def _update_sweat(self, v: int):
         ok = v == 1
         val = 1 if ok else 0
         self.sweat_val_lbl.config(text=f"Humedad: {val}")
-        self.H = val/100  # update for stress calculation
+        self.Humidity = val / 100  # update for stress calculation
         self.sweat_status_lbl.config(text="Normal (No se detecta sudor)" if ok else "Alta (Sudor detectado)",
                                      fg="green" if ok else "red")
         self.warnings["SWEAT"] = not ok
@@ -547,6 +556,7 @@ class FlexMonitorGUI:
 
     def _calc_bmi(self):
         if self.height_cm is None:
+            messagebox.showinfo("Falta Altura", "Espere a que el sensor detecte la altura.")
             return
         try:
             txt = self.weight_entry.get().strip()
@@ -557,9 +567,10 @@ class FlexMonitorGUI:
             self.weight_kg = float(txt)
         except ValueError:
             self.weight_kg = None
+            messagebox.showerror("Error", "Por favor ingrese un peso válido.")
             return
 
-        if self.weight_kg is None or self.weight_kg <= 0:
+        if self.weight_kg <= 0:
             self.bmi_result_lbl.config(text="BMI: (peso inválido)")
             return
 
@@ -567,23 +578,92 @@ class FlexMonitorGUI:
         if h_m <= 0:
             self.bmi_result_lbl.config(text="BMI: (altura inválida)")
             return
+
+        # Standard BMI Formula: kg / m^2
         bmi = self.weight_kg / (h_m ** 2)
-        self.bmi_result_lbl.config(text=f"BMI: {bmi:.1f}")
-        self.I = bmi
+        self.BMI = bmi  # Update for stress calc
+
+        # Get Gender for display
+        gender = self.gender_var.get()
+
+        # Determine category (WHO Standards)
+        if bmi < 18.5:
+            category = "Bajo peso"
+        elif bmi < 25:
+            category = "Normal"
+        elif bmi < 30:
+            category = "Sobrepeso"
+        else:
+            category = "Obesidad"
+
+        self.bmi_result_lbl.config(text=f"BMI ({gender}): {bmi:.1f} [{category}]")
+
+        # Trigger stress update immediately in case BMI changed
+        self._update_stress()
 
     def _update_stress(self):
-        n = sum(self.warnings.values())
+        """
+        Calculates Stress Score (0-100) using a Weighted Sum Model (WSM).
 
-        if (self.I is None or self.H is None or self.P is None or self.S is None):
+        Mathematical Model:
+        Stress = (w_pulse * Norm_Pulse) + (w_sweat * Sweat) + (w_posture * Posture) + BMI_Penalty
+
+        Weights:
+        - Pulse (50%): Primary indicator of physiological arousal.
+        - Sweat (30%): Indicator of acute sympathetic response.
+        - Posture (20%): Indicator of physical/ergonomic stress load.
+        """
+        # 1. Validate Data Availability
+        if self.Pulse is None:
             return
 
-        stress = ( ( self.I * self.H ) + ( self.P * self.P ) ) / ( self.S + 1 )
+        # 2. Constants / Weights
+        W_PULSE = 0.5
+        W_SWEAT = 0.3
+        W_POSTURE = 0.2
 
-        level = STRESS_LEVELS.get(n, STRESS_LEVELS[
-            max(STRESS_LEVELS.keys()) if STRESS_LEVELS else 3])  # Default to highest defined stress if n is out of typical range
-        colour = "green" if level == "Bajo" else ("orange" if level == "Medio" else "red")
-        self.stress_value_lbl.config(text=f"Valor de estrés: {stress:.2f}", fg=colour)
-        self.stress_lbl.config(text=f"Nivel de estrés: {level}", fg=colour)
+        # 3. Normalization of Heart Rate (Min-Max Scaling)
+        # We clamp the value between 0.0 and 1.0 to prevent outliers breaking the scale
+        # Uses the global constants PULSE_MIN (50) and PULSE_MAX (100) defined at top of script
+        pulse_clamped = max(PULSE_MIN, min(PULSE_MAX, self.Pulse))
+        norm_pulse = (pulse_clamped - PULSE_MIN) / (PULSE_MAX - PULSE_MIN)
+
+        # 4. Binary Sensor Normalization
+        # 1.0 if warning exists (Bad), 0.0 if normal
+        val_sweat = 1.0 if self.warnings.get("SWEAT", False) else 0.0
+        val_posture = 1.0 if self.warnings.get("POSTURE", False) else 0.0
+
+        # 5. BMI Penalty (Static Offset)
+        # If BMI > 25, we add a 0.1 (10%) baseline load factor due to increased metabolic demand
+        bmi_penalty = 0.1 if (self.BMI and self.BMI > 25) else 0.0
+
+        # 6. Weighted Sum Calculation
+        # Result is a float between 0.0 and ~1.1
+        weighted_sum = (W_PULSE * norm_pulse) + (W_SWEAT * val_sweat) + (W_POSTURE * val_posture) + bmi_penalty
+
+        # 7. Scale to Percentage (0-100)
+        final_score = min(100.0, weighted_sum * 100.0)
+
+        # 8. Determine Categorical Level
+        if final_score < 30:
+            level = "Bajo"
+            colour = "green"
+        elif final_score < 60:
+            level = "Medio"
+            colour = "orange"
+        else:
+            level = "Alto"
+            colour = "red"
+
+        # 9. Update GUI
+        if hasattr(self, 'stress_value_lbl'):
+            self.stress_value_lbl.config(text=f"Índice de Estrés: {int(final_score)}/100", fg=colour)
+
+        if hasattr(self, 'stress_lbl'):
+            self.stress_lbl.config(text=f"Nivel: {level}", fg=colour)
+
+        # Optional Debugging
+        # print(f"WSM Input -> NormPulse:{norm_pulse:.2f} Sweat:{val_sweat} Posture:{val_posture} | Score: {final_score:.2f}")
 
     # ───────────── BEEP CONTROL ───────────── #
     # ADDED BACK

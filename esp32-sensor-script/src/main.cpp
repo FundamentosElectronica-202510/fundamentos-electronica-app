@@ -23,8 +23,8 @@ const int trigS = 21; // Ultrasonic trigger ------------------------------------
 const int echoS = 32; // Ultrasonic echo ------------------------------------------------------ Sensor Altura ECHO = 16
 const int SENSOR_DEFAULT_HEIGHT = 178;
 
-const int postureS_SDA = 34; // GY-88 --------------------------------------------------------- Sensor Postura SDA = 32
-const int postureS_SCL = 12; // GY-88 --------------------------------------------------------- Sensor Postura SCL = 13
+const int postureS_SDA = 21; // GY-88 --------------------------------------------------------- Sensor Postura SDA = 32
+const int postureS_SCL = 22; // GY-88 --------------------------------------------------------- Sensor Postura SCL = 13
 
 // Thresholds
 // const int POSTURE_THRESHOLD = 4050; // OLD: Flex sensor threshold

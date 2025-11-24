@@ -11,6 +11,8 @@ from tkinter import ttk, messagebox
 # ────────────────────────────── Config ──────────────────────────────── #
 
 import serial.tools.list_ports
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 
 
 def _find_esp32_bt_port() -> str | None:
@@ -206,11 +208,42 @@ class FlexMonitorGUI:
         self.bmi_result_lbl = self._lbl(bmi_f, "BMI: --", font=("Helvetica", 16))
         self.bmi_result_lbl.pack(pady=10)
 
-        # Widgets for Nivel de estrés tab
-        self.stress_value_lbl = self._lbl(self.frames["Nivel de estrés"], "Valor de estrés: --", font=("Helvetica", 18))
-        self.stress_value_lbl.pack(expand=True, pady=20)
-        self.stress_lbl = self._lbl(self.frames["Nivel de estrés"], "Nivel de estrés: --", font=("Helvetica", 20))
-        self.stress_lbl.pack(expand=True, pady=20)
+        # ─────────────────── Stress Tab Modifications ─────────────────── #
+        stress_f = self.frames["Nivel de estrés"]
+
+        # 1. Display the Formula using Matplotlib (for LaTeX rendering)
+        # We adjust colors based on your existing theme logic
+        bg_color = "#2b2b2b" if self.text_colour == "white" else "#f0f0f0"
+
+        fig_formula = Figure(figsize=(6, 1.5), dpi=100)
+        fig_formula.patch.set_facecolor(bg_color)  # Match frame background approx
+
+        ax = fig_formula.add_subplot(111)
+        ax.axis('off')  # Hide X and Y axes
+
+        # The LaTeX Formula
+        # \hat{H} = Normalized Heart Rate
+        # S = Sweat
+        # P = Posture
+        # K = BMI Constant
+        latex_str = r"$Stress = (0.5 \cdot \hat{H} + 0.3 \cdot S + 0.2 \cdot P + K_{BMI}) \times 100$"
+
+        ax.text(0.5, 0.5, latex_str,
+                fontsize=16,
+                ha='center',
+                va='center',
+                color=self.text_colour)  # Use your dynamic text colour
+
+        canvas = FigureCanvasTkAgg(fig_formula, master=stress_f)
+        canvas.draw()
+        canvas.get_tk_widget().pack(pady=(20, 0))
+
+        # 2. The Dynamic Values
+        self.stress_value_lbl = self._lbl(stress_f, "Índice de Estrés: --/100", font=("Helvetica", 18))
+        self.stress_value_lbl.pack(expand=True, pady=10)
+
+        self.stress_lbl = self._lbl(stress_f, "Nivel: --", font=("Helvetica", 22, "bold"))
+        self.stress_lbl.pack(expand=True, pady=(0, 20))
 
     def _build_port_config_widgets(self, parent_frame: tk.Widget) -> ttk.Frame:
         """

@@ -531,26 +531,9 @@ class FlexMonitorGUI:
 
     def _update_pulse(self, bpm: int):
         # Update labels
-        if bpm < 40 or bpm > 200:
-            bpm = 0  # Filter out unrealistic low values
-            self.past_pulses = []
-            
-        bpm_int = int(bpm)
-        l = len(self.past_pulses)
-        if l > 3:
-            self.past_pulses.pop(0)
-        
-        if bpm_int != 0: self.past_pulses.append( bpm_int )
-        sum = 0
-        i = 0
-        
-        if l > 0:
-            while i < l:
-                sum += self.past_pulses[i]
-                i += 1
-            mean = sum / l
-        else:
+        if bpm <= 40 or bpm >= 200:
             mean = 0
+        mean = bpm
         
         self.pulse_val_lbl.config(text=f"Pulso: {mean} bpm")
         self.Pulse = mean  # update for stress calculation

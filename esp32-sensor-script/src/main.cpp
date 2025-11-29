@@ -15,7 +15,7 @@ Adafruit_MPU6050 mpu; // NEW: MPU-6050 sensor object
 
 // Pin assignments (GPIO)
 // const int flexS = 33; // OLD: This pin is no longer used for posture
-const int pulseS = 35; // Analog input (VN) --------------------------------------------------- Sensor de pulso = 35
+const int pulseS = 36; // Analog input (VN) --------------------------------------------------- Sensor de pulso = 35
 const int sweatS = 33; // Digital input -------------------------------------------------------- Sensor de sudor = 5
 const int flexBuzzer = 17; // Digital output (still used for posture alert) -------------------- Buzzer = 27
 
@@ -23,8 +23,8 @@ const int trigS = 21; // Ultrasonic trigger ------------------------------------
 const int echoS = 32; // Ultrasonic echo ------------------------------------------------------ Sensor Altura ECHO = 16
 const int SENSOR_DEFAULT_HEIGHT = 178;
 
-const int postureS_SDA = 34; // GY-88 --------------------------------------------------------- Sensor Postura SDA = 32
-const int postureS_SCL = 12; // GY-88 --------------------------------------------------------- Sensor Postura SCL = 13
+const int postureS_SDA = 22; // GY-88 --------------------------------------------------------- Sensor Postura SDA = 32
+const int postureS_SCL = 18; // GY-88 --------------------------------------------------------- Sensor Postura SCL = 13
 
 // Thresholds
 // const int POSTURE_THRESHOLD = 4050; // OLD: Flex sensor threshold
@@ -32,12 +32,14 @@ const int POSTURE_ANGLE_THRESHOLD = 25; // NEW: Angle in degrees (e.g., 25°) fo
 const int POSTURE_CYCLE_THRESHOLD = 5;
 
 /* --- BPM calculation state --- */
-const int PULSE_THRESHOLD = 1800; 
+const int PULSE_THRESHOLD = 2000; 
 const int HYSTERESIS = 30;
 const ulong BPM_WINDOW_MS = 5000; 
 bool pulseLow = true; 
 ulong windowStartMs = 0; 
-int beatCount = 0; 
+int beatCount = 0;
+
+int LED13 = 2;
 
 // int flexdata = 0; // OLD
 int pulsedata = 0;
@@ -49,6 +51,7 @@ int pulseCycleCounter = 0;
 void setup() {
     Serial.begin(115200);
     BT.begin("ESP32BT-NVLPZ");
+    pinMode(LED13,OUTPUT);   
 
     // --- NEW: Initialize I2C and MPU-6050 ---
     // Use default ESP32 I2C pins (SDA=21, SCL=22)
@@ -134,9 +137,11 @@ void loop() {
 
     if (pulseLow && pulsedata > PULSE_THRESHOLD) {
         pulseLow = false; 
+        digitalWrite(LED13,HIGH);
         beatCount++; 
     } else if (!pulseLow && pulsedata < PULSE_THRESHOLD - HYSTERESIS) {
         pulseLow = true; 
+        digitalWrite(LED13,LOW);
     }
 
     ulong now = millis();
